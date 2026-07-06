@@ -34,7 +34,7 @@ fun ResultsScreen(
 
     LaunchedEffect(videoPath) {
         val classification = ElementClassifier.ClassificationResult(
-            elements = listOf(
+            elements = listOf<DetectedElement>(
                 DetectedElement("JUMP", "Axel Doble (2A)", "2", 3.30, 1, listOf("Buena altura", "Rotación completa"), 3.63, 5.2f, 6.8f, true, 0.87f),
                 DetectedElement("SPIN", "Pirueta Combinada (CoSp)", "3", 2.50, 2, listOf("Buena velocidad", "Posición centrada"), 3.00, 12.4f, 15.1f, true, 0.92f),
                 DetectedElement("JUMP", "Toe Loop Triple (3T)", "3", 4.20, 0, listOf(), 4.20, 20.1f, 21.5f, true, 0.78f),
@@ -64,7 +64,8 @@ fun ResultsScreen(
             )
         }
     ) { padding ->
-        result?.let { res ->
+        val r = result
+        if (r != null) {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -73,18 +74,18 @@ fun ResultsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
-                    ScoreSummaryCard(res)
+                    ScoreSummaryCard(r)
                 }
 
                 item {
                     Text(
-                        "Elementos detectados (${res.elements.size})",
+                        "Elementos detectados (${r.elements.size})",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
-                items(res.elements) { element ->
+                items(r.elements) { element ->
                     ElementCard(
                         element = element,
                         isExpanded = expandedElement == element.name,
@@ -103,13 +104,15 @@ fun ResultsScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
             }
-        } ?: Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentAlignment = Alignment.Center
-        ) {
-            CircularProgressIndicator()
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
         }
     }
 }
