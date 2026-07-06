@@ -1,0 +1,137 @@
+# =============================================================================
+# Build APK — Entrenador Virtual Roller
+# -----------------------------------------------------------------------------
+# Propósito:   Compilar automáticamente la APK en modo debug/development tras
+#              cada push a la rama principal (main).
+# Framework:   Adaptable — el equipo debe ajustar las tareas "Setup" y "Build"
+#              al stack elegido (Flutter, React Native, Kotlin, etc.).
+# Salida:      APK firmada en debug subida como artifact descargable.
+# =============================================================================
+
+name: Build APK (Debug)
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:             # Permite lanzar la build manualmente
+
+env:
+  APK_OUTPUT_DIR: build/outputs/apk/debug/
+  APK_ARTIFACT_NAME: virtual-coach-roller-debug
+
+jobs:
+  build:
+    name: Compilar APK (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        # Se puede añadir macos-latest si se necesita compilar para iOS
+
+    steps:
+      # ──────────────────────────────────────────────────────────────────────
+      # 1. Checkout del repositorio
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ──────────────────────────────────────────────────────────────────────
+      # 2. Configurar Java (requerido para Android SDK / Gradle)
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      # ──────────────────────────────────────────────────────────────────────
+      # 3. Configurar Android SDK
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # ──────────────────────────────────────────────────────────────────────
+      # 4. [STACK‑ADAPTABLE] Setup del framework móvil
+      # ──────────────────────────────────────────────────────────────────────
+      # Descomentar y adaptar según el framework elegido:
+      #
+      # ─── Opción A: Flutter ──────────────────────────────────────────────
+      # - name: Setup Flutter
+      #   uses: subosito/flutter-action@v2
+      #   with:
+      #     channel: "stable"
+      #     cache: true
+      #
+      # - name: Install Flutter dependencies
+      #   run: flutter pub get
+      #
+      # ─── Opción B: React Native (Expo) ──────────────────────────────────
+      # - name: Setup Node.js
+      #   uses: actions/setup-node@v4
+      #   with:
+      #     node-version: "20"
+      #     cache: "npm"
+      #
+      # - name: Install Node dependencies
+      #   run: npm ci
+      #
+      # ─── Opción C: Kotlin + Gradle (nativo Android) ─────────────────────
+      # (ya cubierto por los pasos 2 y 3; solo ejecutar gradle)
+
+      # ──────────────────────────────────────────────────────────────────────
+      # 5. Cache de dependencias del framework
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # ──────────────────────────────────────────────────────────────────────
+      # 6. [STACK‑ADAPTABLE] Compilar la APK en modo debug
+      # ──────────────────────────────────────────────────────────────────────
+      # Descomentar el bloque correspondiente al framework elegido:
+      #
+      # ─── Opción A: Flutter ──────────────────────────────────────────────
+      # - name: Build APK (Flutter)
+      #   run: flutter build apk --debug
+      #
+      # ─── Opción B: React Native ─────────────────────────────────────────
+      # - name: Build APK (React Native)
+      #   run: |
+      #     cd android
+      #     ./gradlew assembleDebug
+      #
+      # ─── Opción C: Kotlin / Gradle nativo ──────────────────────────────
+      # - name: Build APK (Gradle)
+      #   run: ./gradlew assembleDebug
+
+      # ──────────────────────────────────────────────────────────────────────
+      # 7. Subir APK como artifact
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APK_ARTIFACT_NAME }}
+          path: ${{ env.APK_OUTPUT_DIR }}
+          if-no-files-found: error
+          retention-days: 15
+
+      # ──────────────────────────────────────────────────────────────────────
+      # 8. (Opcional) Notificar resultado
+      # ──────────────────────────────────────────────────────────────────────
+      # - name: Notify build result
+      #   if: always()
+      #   run: |
+      #     echo "Build status: ${{ job.status }}"
+      #     # Integrar con Slack / Discord / Telegram si se desea

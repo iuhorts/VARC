@@ -1,0 +1,58 @@
+# =============================================================================
+# .gitignore — Virtual Artistic Roller Coach (VARC)
+# =============================================================================
+
+# IDE / Editor
+.idea/
+*.iml
+.vscode/
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+
+# Android / Gradle
+*.apk
+*.aab
+*.dex
+*.class
+*.log
+gen/
+local.properties
+.gradle/
+build/
+*.ap_
+*.dex
+bin/
+*.pro
+
+# Flutter
+.dart_tool/
+.packages
+.pub/
+build/
+*.flutter-plugins
+*.flutter-plugins-dependencies
+
+# React Native / Node
+node_modules/
+npm-debug.log
+yarn-error.log
+.expo/
+
+# Python / ML models (on-device downloads)
+__pycache__/
+*.pyc
+*.onnx
+*.tflite
+*.bin
+models/
+
+# Secrets / Config
+*.key
+keystore.jks
+*.p12
+.env
+.env.local
