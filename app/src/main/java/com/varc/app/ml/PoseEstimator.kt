@@ -8,7 +8,7 @@ import com.google.mlkit.vision.pose.defaults.PoseDetectorOptions
 
 data class PoseData(
     val landmarks: List<PoseLandmark>,
-    val boundingBox: androidx.graphics.Rect? = null
+    val boundingBox: android.graphics.Rect? = null
 )
 
 data class PoseLandmark(
