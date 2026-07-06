@@ -56,3 +56,7 @@ keystore.jks
 *.p12
 .env
 .env.local
+
+# Temporary build artifacts
+gradle-tmp/
+gradle-dist.zip

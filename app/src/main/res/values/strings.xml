@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">VARC</string>
+    <string name="app_full_name">Virtual Artistic Roller Coach</string>
+    <string name="camera_permission">Se necesita acceso a la cámara para grabar y analizar rutinas de patinaje.</string>
+    <string name="gallery">Galería</string>
+    <string name="record">Grabar</string>
+    <string name="process">Analizar</string>
+    <string name="results">Resultados</string>
+    <string name="profile">Perfil</string>
+    <string name="history">Historial</string>
+    <string name="total_score">Puntuación Total</string>
+    <string name="tes">TES (Technical Element Score)</string>
+    <string name="goe">GOE (Grado de Ejecución)</string>
+    <string name="deductions">Deducciones</string>
+    <string name="elements">Elementos detectados</string>
+    <string name="no_elements">No se detectaron elementos</string>
+    <string name="processing">Procesando vídeo…</string>
+    <string name="select_video">Seleccionar vídeo de la galería</string>
+    <string name="start_recording">Iniciar grabación</string>
+    <string name="stop_recording">Detener grabación</string>
+</resources>
