@@ -60,3 +60,5 @@ keystore.jks
 # Temporary build artifacts
 gradle-tmp/
 gradle-dist.zip
+build-logs/
+build-logs.zip
