@@ -48,7 +48,7 @@ __pycache__/
 *.onnx
 *.tflite
 *.bin
-models/
+/models/
 
 # Secrets / Config
 *.key
