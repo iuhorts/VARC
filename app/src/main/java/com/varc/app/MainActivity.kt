@@ -24,8 +24,10 @@ class MainActivity : ComponentActivity() {
     private var hasCameraPermission by mutableStateOf(false)
 
     private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted -> hasCameraPermission = granted }
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        hasCameraPermission = permissions[Manifest.permission.CAMERA] == true
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,10 +71,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkAndRequestPermissions() {
-        when {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
-                PackageManager.PERMISSION_GRANTED -> hasCameraPermission = true
-            else -> requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+        val cameraGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED
+        if (cameraGranted) {
+            hasCameraPermission = true
+        } else {
+            requestPermissionLauncher.launch(
+                arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+            )
         }
     }
 }

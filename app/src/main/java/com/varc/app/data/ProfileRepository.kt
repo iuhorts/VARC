@@ -1,0 +1,41 @@
+package com.varc.app.data
+
+import android.content.Context
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import com.varc.app.data.models.SkaterProfile
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+
+private val Context.profileDataStore by preferencesDataStore(name = "varc_profile")
+
+class ProfileRepository(private val context: Context) {
+
+    companion object {
+        private val NAME_KEY = stringPreferencesKey("name")
+        private val CATEGORY_KEY = stringPreferencesKey("category")
+        private val CLUB_KEY = stringPreferencesKey("club")
+        private val LEVEL_KEY = stringPreferencesKey("level")
+    }
+
+    fun getProfile(): Flow<SkaterProfile> {
+        return context.profileDataStore.data.map { prefs ->
+            SkaterProfile(
+                name = prefs[NAME_KEY] ?: "Patinadora",
+                category = prefs[CATEGORY_KEY] ?: "Senior Femenino",
+                club = prefs[CLUB_KEY] ?: "",
+                level = prefs[LEVEL_KEY] ?: "Nacional"
+            )
+        }
+    }
+
+    suspend fun updateProfile(profile: SkaterProfile) {
+        context.profileDataStore.edit { prefs ->
+            prefs[NAME_KEY] = profile.name
+            prefs[CATEGORY_KEY] = profile.category
+            prefs[CLUB_KEY] = profile.club
+            prefs[LEVEL_KEY] = profile.level
+        }
+    }
+}

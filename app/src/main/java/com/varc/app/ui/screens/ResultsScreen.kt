@@ -13,14 +13,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.varc.app.data.SessionRepository
 import com.varc.app.data.models.DetectedElement
 import com.varc.app.data.models.ScoringResult
-import com.varc.app.ml.ElementClassifier
-import com.varc.app.scoring.ScoringEngine
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,26 +27,12 @@ fun ResultsScreen(
     videoPath: String,
     onBack: () -> Unit
 ) {
-    val scope = rememberCoroutineScope()
-    var result by remember { mutableStateOf<ScoringResult?>(null) }
-    var expandedElement by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val repository = remember { SessionRepository(context) }
+    val sessions by repository.getSessions().collectAsState(initial = emptyList())
+    val result = sessions.firstOrNull()
 
-    LaunchedEffect(videoPath) {
-        val classification = ElementClassifier.ClassificationResult(
-            elements = listOf<DetectedElement>(
-                DetectedElement("JUMP", "Axel Doble (2A)", "2", 3.30, 1, listOf("Buena altura", "Rotación completa"), 3.63, 5.2f, 6.8f, true, 0.87f),
-                DetectedElement("SPIN", "Pirueta Combinada (CoSp)", "3", 2.50, 2, listOf("Buena velocidad", "Posición centrada"), 3.00, 12.4f, 15.1f, true, 0.92f),
-                DetectedElement("JUMP", "Toe Loop Triple (3T)", "3", 4.20, 0, listOf(), 4.20, 20.1f, 21.5f, true, 0.78f),
-                DetectedElement("STEP", "Secuencia Circular (CiSt)", "2", 1.80, 1, listOf("Buena cobertura"), 1.98, 30.5f, 37.2f, true, 0.85f),
-                DetectedElement("SPIN", "Pirueta Sentada (SSp)", "3", 1.30, 1, listOf("Posición lograda"), 1.43, 42.0f, 45.5f, true, 0.90f),
-                DetectedElement("JUMP", "Lutz Doble (2Lz)", "2", 2.10, 2, listOf("Buena altura", "Aterrizaje limpio"), 2.52, 50.3f, 51.8f, true, 0.83f),
-                DetectedElement("STEP", "Secuencia Coreográfica (ChSq)", "1", 2.00, 1, listOf("Originalidad"), 2.20, 60.0f, 70.5f, true, 0.76f)
-            ),
-            fallDetected = false,
-            programDuration = 72.5f
-        )
-        result = ScoringEngine.calculateScore(classification)
-    }
+    var expandedElement by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -64,8 +49,7 @@ fun ResultsScreen(
             )
         }
     ) { padding ->
-        val r = result
-        if (r != null) {
+        if (result != null) {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -74,18 +58,18 @@ fun ResultsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
-                    ScoreSummaryCard(r)
+                    ScoreSummaryCard(result)
                 }
 
                 item {
                     Text(
-                        "Elementos detectados (${r.elements.size})",
+                        "Elementos detectados (${result.elements.size})",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
-                items(r.elements) { element ->
+                items(result.elements) { element ->
                     ElementCard(
                         element = element,
                         isExpanded = expandedElement == element.name,
@@ -97,7 +81,7 @@ fun ResultsScreen(
 
                 item {
                     Text(
-                        "* Puntuación simulada con datos de ejemplo. Los resultados reales requieren procesamiento de vídeo mediante modelos de visión por computadora.",
+                        "Resultados generados por VARC AI basados en análisis de vídeo mediante ML Kit.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -106,12 +90,15 @@ fun ResultsScreen(
             }
         } else {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
+                modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator()
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Cargando resultados…",
+                        style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
     }
@@ -127,16 +114,12 @@ private fun ScoreSummaryCard(result: ScoringResult) {
         )
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                "Puntuación Total",
+            Text("Puntuación Total",
                 style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
-            )
+                color = MaterialTheme.colorScheme.onPrimaryContainer)
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 String.format("%.1f", result.totalScore),
@@ -144,9 +127,7 @@ private fun ScoreSummaryCard(result: ScoringResult) {
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
-
             Spacer(modifier = Modifier.height(16.dp))
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -162,17 +143,11 @@ private fun ScoreSummaryCard(result: ScoringResult) {
 @Composable
 private fun ScoreItem(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            value,
-            style = MaterialTheme.typography.titleLarge,
+        Text(value, style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onPrimaryContainer
-        )
-        Text(
-            label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-        )
+            color = MaterialTheme.colorScheme.onPrimaryContainer)
+        Text(label, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f))
     }
 }
 
@@ -202,9 +177,7 @@ private fun ElementCard(
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
@@ -215,67 +188,50 @@ private fun ElementCard(
                 Spacer(modifier = Modifier.width(12.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        element.name,
+                    Text(element.name,
                         style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        "Nivel ${element.level} · ${element.type}",
+                        fontWeight = FontWeight.SemiBold)
+                    Text("Nivel ${element.level} · ${element.type}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
 
                 Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        String.format("%.2f", element.finalValue),
+                    Text(String.format("%.2f", element.finalValue),
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                        fontWeight = FontWeight.Bold)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             "GOE ${if (element.goe >= 0) "+" else ""}${element.goe}",
                             style = MaterialTheme.typography.bodySmall,
                             color = goeColor,
-                            fontWeight = FontWeight.Bold
-                        )
+                            fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.width(4.dp))
                         Icon(
                             if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                             contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
+                            modifier = Modifier.size(16.dp))
                     }
                 }
             }
 
             if (isExpanded && element.goeFactors.isNotEmpty()) {
-                Divider(modifier = Modifier.padding(horizontal = 16.dp))
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
+                    modifier = Modifier.fillMaxWidth().padding(16.dp)
                 ) {
-                    Text(
-                        "Factores GOE",
+                    Text("Factores GOE",
                         style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                        fontWeight = FontWeight.SemiBold)
                     Spacer(modifier = Modifier.height(8.dp))
                     element.goeFactors.forEach { factor ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Filled.CheckCircle,
+                            Icon(Icons.Filled.CheckCircle,
                                 contentDescription = null,
                                 modifier = Modifier.size(14.dp),
-                                tint = goeColor
-                            )
+                                tint = goeColor)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                factor,
-                                style = MaterialTheme.typography.bodySmall
-                            )
+                            Text(factor, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }

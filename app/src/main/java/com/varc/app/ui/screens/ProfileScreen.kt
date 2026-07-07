@@ -1,6 +1,7 @@
 package com.varc.app.ui.screens
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -16,17 +17,30 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.varc.app.data.ProfileRepository
+import com.varc.app.data.SessionRepository
 import com.varc.app.data.models.ProgramComponents
+import com.varc.app.data.models.SkaterProfile
+import kotlinx.coroutines.launch
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Rendimiento", "Evolución", "Perfil")
+    val profileRepo = remember { ProfileRepository(context) }
+    val sessionRepo = remember { SessionRepository(context) }
+    val profile by profileRepo.getProfile().collectAsState(initial = SkaterProfile())
+    val sessions by sessionRepo.getSessions().collectAsState(initial = emptyList())
 
     Scaffold(
         topBar = {
@@ -44,46 +58,43 @@ fun ProfileScreen(onBack: () -> Unit) {
         }
     ) { padding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
+            modifier = Modifier.fillMaxSize().padding(padding)
         ) {
-            SkaterHeader()
+            SkaterHeader(profile)
 
             TabRow(selectedTabIndex = selectedTab) {
                 tabs.forEachIndexed { index, title ->
                     Tab(
                         selected = selectedTab == index,
                         onClick = { selectedTab = index },
-                        text = { Text(title, fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal) }
+                        text = {
+                            Text(title,
+                                fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal)
+                        }
                     )
                 }
             }
 
             when (selectedTab) {
-                0 -> PerformancePanel()
-                1 -> EvolutionPanel()
-                2 -> SkaterInfoPanel()
+                0 -> PerformancePanel(sessions)
+                1 -> EvolutionPanel(sessions)
+                2 -> SkaterInfoPanel(profile, profileRepo, scope)
             }
         }
     }
 }
 
 @Composable
-private fun SkaterHeader() {
+private fun SkaterHeader(profile: SkaterProfile) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
         )
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
@@ -103,52 +114,67 @@ private fun SkaterHeader() {
             Spacer(modifier = Modifier.width(16.dp))
             Column {
                 Text(
-                    "Patinadora",
+                    profile.name,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "Senior Femenino · Nivel Nacional",
+                    "${profile.category} · ${profile.level}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                 )
+                if (profile.club.isNotBlank()) {
+                    Text(
+                        profile.club,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f)
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun PerformancePanel() {
+private fun PerformancePanel(sessions: List<com.varc.app.data.models.ScoringResult>) {
+    val latestSession = sessions.firstOrNull()
+    val avgComponents = if (sessions.isNotEmpty()) {
+        val count = sessions.size.coerceAtMost(10)
+        val recent = sessions.take(count)
+        ProgramComponents(
+            skills = (recent.map { (it.tes / 10f).coerceIn(0f, 10f) }.average().toFloat()),
+            transitions = (recent.map { (it.tes / 12f).coerceIn(0f, 10f) }.average().toFloat()),
+            performance = (recent.map { ((it.totalScore - it.tes) / 5f).coerceIn(0f, 10f) }.average().toFloat()),
+            choreography = (recent.map { (it.totalScore / 15f).coerceIn(0f, 10f) }.average().toFloat()),
+            interpretation = (recent.map { ((it.totalScore - it.deductions) / 12f).coerceIn(0f, 10f) }.average().toFloat())
+        )
+    } else ProgramComponents()
+
+    val validElements = latestSession?.elements?.count { it.isValid } ?: 0
+    val invalidElements = (latestSession?.elements?.size ?: 0) - validElements
+
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                "Componentes del Programa",
+            Text("Componentes del Programa",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
+                fontWeight = FontWeight.Bold)
         }
 
         item {
             RadarChart(
-                components = ProgramComponents(8.5f, 7.2f, 8.0f, 7.5f, 7.8f),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(300.dp)
+                components = avgComponents,
+                modifier = Modifier.fillMaxWidth().height(300.dp)
             )
         }
 
         item {
-            Text(
-                "Última sesión",
+            Text("Última sesión",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
+                fontWeight = FontWeight.Bold)
         }
 
         item {
@@ -162,7 +188,12 @@ private fun PerformancePanel() {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("Puntuación Total", fontWeight = FontWeight.SemiBold)
-                        Text("52.3", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            if (latestSession != null) String.format("%.1f", latestSession.totalScore)
+                            else "—",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
@@ -170,22 +201,28 @@ private fun PerformancePanel() {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("Elementos", style = MaterialTheme.typography.bodySmall)
-                        Text("7 válidos · 0 no válidos", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            if (latestSession != null) "$validElements válidos · $invalidElements no válidos"
+                            else "Sin datos",
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("Deducciones", style = MaterialTheme.typography.bodySmall)
-                        Text("0.0", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            if (latestSession != null) String.format("%.1f", latestSession.deductions)
+                            else "—",
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 }
             }
         }
 
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
-        }
+        item { Spacer(modifier = Modifier.height(16.dp)) }
     }
 }
 
@@ -196,10 +233,8 @@ private fun RadarChart(
 ) {
     val labels = listOf("Skills", "Transitions", "Performance", "Choreography", "Interpretation")
     val values = listOf(
-        components.skills,
-        components.transitions,
-        components.performance,
-        components.choreography,
+        components.skills, components.transitions,
+        components.performance, components.choreography,
         components.interpretation
     )
     val maxVal = 10f
@@ -216,8 +251,8 @@ private fun RadarChart(
             val r = radius * level / 5
             val path = Path()
             angles.forEachIndexed { i, angle ->
-                val x = centerX + r * kotlin.math.cos(angle)
-                val y = centerY + r * kotlin.math.sin(angle)
+                val x = centerX + r * cos(angle)
+                val y = centerY + r * sin(angle)
                 if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
             path.close()
@@ -225,16 +260,16 @@ private fun RadarChart(
         }
 
         for (i in labels.indices) {
-            val x1 = centerX + radius * kotlin.math.cos(angles[i])
-            val y1 = centerY + radius * kotlin.math.sin(angles[i])
+            val x1 = centerX + radius * cos(angles[i])
+            val y1 = centerY + radius * sin(angles[i])
             drawLine(Color.LightGray.copy(alpha = 0.3f), Offset(centerX, centerY), Offset(x1, y1), strokeWidth = 1f)
         }
 
         val dataPath = Path()
         angles.forEachIndexed { i, angle ->
             val r = radius * (values[i] / maxVal)
-            val x = centerX + r * kotlin.math.cos(angle)
-            val y = centerY + r * kotlin.math.sin(angle)
+            val x = centerX + r * cos(angle)
+            val y = centerY + r * sin(angle)
             if (i == 0) dataPath.moveTo(x, y) else dataPath.lineTo(x, y)
         }
         dataPath.close()
@@ -243,41 +278,41 @@ private fun RadarChart(
 
         angles.forEachIndexed { i, angle ->
             val r = radius * (values[i] / maxVal)
-            val x = centerX + r * kotlin.math.cos(angle)
-            val y = centerY + r * kotlin.math.sin(angle)
+            val x = centerX + r * cos(angle)
+            val y = centerY + r * sin(angle)
             drawCircle(Color(0xFF6C63FF), 5f, Offset(x, y))
         }
     }
 }
 
 @Composable
-private fun EvolutionPanel() {
+private fun EvolutionPanel(sessions: List<com.varc.app.data.models.ScoringResult>) {
+    var selectedSessions by remember { mutableIntStateOf(0) }
+    val displayLimit = when (selectedSessions) {
+        0 -> 3
+        1 -> 10
+        else -> Int.MAX_VALUE
+    }
+    val displaySessions = sessions.take(displayLimit)
+
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                "Evolución del TES",
+            Text("Evolución del TES",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
+                fontWeight = FontWeight.Bold)
         }
 
         item {
-            var selectedSessions by remember { mutableIntStateOf(0) }
-
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(6.dp),
+                    modifier = Modifier.fillMaxWidth().padding(6.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     listOf("Últimas 3", "Últimas 10", "Todas").forEachIndexed { i, label ->
@@ -292,34 +327,41 @@ private fun EvolutionPanel() {
         }
 
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Progresión de elementos", fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    listOf(
-                        "Axel Doble (2A)" to "80% de éxito (8/10)",
-                        "Toe Loop Triple (3T)" to "60% de éxito (6/10)",
-                        "Pirueta Combinada" to "Nivel 3 estable"
-                    ).forEach { (element, status) ->
+            if (displaySessions.isEmpty()) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                    Box(modifier = Modifier.padding(32.dp), contentAlignment = Alignment.Center) {
+                        Text("Aún no hay sesiones analizadas",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            } else {
+                displaySessions.forEachIndexed { index, session ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                Icons.Filled.TrendingUp,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = Color(0xFF4CAF50)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
                             Column {
-                                Text(element, style = MaterialTheme.typography.bodyMedium)
-                                Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Sesión ${sessions.size - index}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold)
+                                Text(java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.getDefault())
+                                    .format(java.util.Date(session.timestamp)),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(String.format("%.1f", session.totalScore),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary)
+                                Text("TES: ${String.format("%.1f", session.tes)}",
+                                    style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -327,84 +369,120 @@ private fun EvolutionPanel() {
             }
         }
 
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
-        }
+        item { Spacer(modifier = Modifier.height(16.dp)) }
     }
 }
 
 @Composable
-private fun SkaterInfoPanel() {
+private fun SkaterInfoPanel(
+    profile: SkaterProfile,
+    profileRepo: ProfileRepository,
+    scope: kotlinx.coroutines.CoroutineScope
+) {
+    var showEditDialog by remember { mutableStateOf(false) }
+
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item {
-            Spacer(modifier = Modifier.height(8.dp))
-        }
+        item { Spacer(modifier = Modifier.height(8.dp)) }
 
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp)
-            ) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    ProfileInfoRow("Categoría", "Senior Femenino")
-                    ProfileInfoRow("Club", "—")
-                    ProfileInfoRow("Nivel", "Nacional")
-                    ProfileInfoRow("Entrenador", "—")
+                    ProfileInfoRow("Categoría", profile.category)
+                    ProfileInfoRow("Club", profile.club.ifEmpty { "—" })
+                    ProfileInfoRow("Nivel", profile.level)
                     ProfileInfoRow("Reglamento", "World Skate 2025-2026")
                 }
             }
         }
 
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Estadísticas", fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    ProfileInfoRow("Sesiones analizadas", "12")
-                    ProfileInfoRow("Total elementos", "84")
-                    ProfileInfoRow("GOE promedio", "+1.2")
-                    ProfileInfoRow("Mejor puntuación", "68.4")
-                }
-            }
-        }
-
-        item {
             Button(
-                onClick = { /* Export */ },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
+                onClick = { showEditDialog = true },
+                modifier = Modifier.fillMaxWidth().height(48.dp),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Icon(Icons.Filled.Download, contentDescription = null)
+                Icon(Icons.Filled.Edit, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Exportar informe PDF")
+                Text("Editar perfil")
             }
         }
 
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
-        }
+        item { Spacer(modifier = Modifier.height(16.dp)) }
     }
+
+    if (showEditDialog) {
+        EditProfileDialog(
+            current = profile,
+            onSave = { updated ->
+                scope.launch { profileRepo.updateProfile(updated) }
+                showEditDialog = false
+            },
+            onDismiss = { showEditDialog = false }
+        )
+    }
+}
+
+@Composable
+private fun EditProfileDialog(
+    current: SkaterProfile,
+    onSave: (SkaterProfile) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf(current.name) }
+    var category by remember { mutableStateOf(current.category) }
+    var club by remember { mutableStateOf(current.club) }
+    var level by remember { mutableStateOf(current.level) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Editar perfil") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it },
+                    label = { Text("Nombre") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = category, onValueChange = { category = it },
+                    label = { Text("Categoría") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = club, onValueChange = { club = it },
+                    label = { Text("Club") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = level, onValueChange = { level = it },
+                    label = { Text("Nivel") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                onSave(SkaterProfile(name = name, category = category, club = club, level = level))
+            }) { Text("Guardar") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
 }
 
 @Composable
 private fun ProfileInfoRow(label: String, value: String) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        Text(label, style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold)
     }
 }
