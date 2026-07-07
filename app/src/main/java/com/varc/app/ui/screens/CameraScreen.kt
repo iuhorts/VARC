@@ -237,10 +237,12 @@ fun CameraScreen(
                         },
                         modifier = Modifier.size(72.dp),
                         shape = CircleShape,
-                        containerColor = if (isRecording)
-                            MaterialTheme.colorScheme.error
-                        else
-                            MaterialTheme.colorScheme.primary
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isRecording)
+                                MaterialTheme.colorScheme.error
+                            else
+                                MaterialTheme.colorScheme.primary
+                        )
                     ) {
                         Icon(
                             if (isRecording) Icons.Filled.Stop else Icons.Filled.FiberManualRecord,
