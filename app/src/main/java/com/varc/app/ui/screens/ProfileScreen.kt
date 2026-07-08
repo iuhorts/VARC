@@ -27,7 +27,7 @@ import com.varc.app.data.models.ProgramComponents
 import com.varc.app.data.models.SkaterProfile
 import kotlinx.coroutines.launch
 import kotlin.math.cos
-import kotlin.math.min
+
 import kotlin.math.sin
 
 @OptIn(ExperimentalMaterial3Api::class)

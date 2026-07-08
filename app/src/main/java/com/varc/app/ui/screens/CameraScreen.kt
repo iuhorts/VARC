@@ -5,8 +5,11 @@ import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.core.*
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.Recorder
+import androidx.camera.video.VideoCapture
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -56,7 +59,7 @@ fun CameraScreen(
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
 
     val preview = remember { Preview.Builder().build() }
-    val videoCapture = remember { VideoCapture.Builder().build() }
+    val videoCapture = remember { VideoCapture.withOutput(Recorder.Builder().build()) }
 
     LaunchedEffect(lifecycleOwner) {
         try {
@@ -81,9 +84,9 @@ fun CameraScreen(
     }
 
     fun startRecording(file: File) {
-        val outputOptions = VideoCapture.OutputFileOptions.Builder(file).build()
-        videoCapture.startRecording(outputOptions, cameraExecutor, object : VideoCapture.OnVideoSavedCallback {
-            override fun onVideoSaved(outputFileResults: VideoCapture.OutputFileResults) {
+        val outputOptions = Recorder.OutputFileOptions.Builder(file).build()
+        videoCapture.startRecording(outputOptions, cameraExecutor, object : VideoCapture.OnVideoSavedCallback<Recorder> {
+            override fun onVideoSaved(outputFileResults: Recorder.OutputFileResults) {
                 val uri = outputFileResults.savedUri ?: Uri.fromFile(file)
                 videoUri = uri
                 processVideo(context, uri, repository, onAnalysisComplete, { progressValue = it }, scope) {
