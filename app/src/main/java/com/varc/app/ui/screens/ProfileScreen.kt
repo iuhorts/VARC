@@ -142,11 +142,11 @@ private fun PerformancePanel(sessions: List<com.varc.app.data.models.ScoringResu
         val count = sessions.size.coerceAtMost(10)
         val recent = sessions.take(count)
         ProgramComponents(
-            skills = (recent.map { (it.tes / 10f).coerceIn(0f, 10f) }.average().toFloat()),
-            transitions = (recent.map { (it.tes / 12f).coerceIn(0f, 10f) }.average().toFloat()),
-            performance = (recent.map { ((it.totalScore - it.tes) / 5f).coerceIn(0f, 10f) }.average().toFloat()),
-            choreography = (recent.map { (it.totalScore / 15f).coerceIn(0f, 10f) }.average().toFloat()),
-            interpretation = (recent.map { ((it.totalScore - it.deductions) / 12f).coerceIn(0f, 10f) }.average().toFloat())
+            skills = averageAndClamp(recent.map { it.tes }, 10.0),
+            transitions = averageAndClamp(recent.map { it.tes }, 12.0),
+            performance = averageAndClamp(recent.map { it.totalScore - it.tes }, 5.0),
+            choreography = averageAndClamp(recent.map { it.totalScore }, 15.0),
+            interpretation = averageAndClamp(recent.map { it.totalScore - it.deductions }, 12.0)
         )
     } else ProgramComponents()
 
@@ -485,4 +485,10 @@ private fun ProfileInfoRow(label: String, value: String) {
         Text(value, style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold)
     }
+}
+
+private fun averageAndClamp(values: List<Double>, divisor: Double): Float {
+    if (values.isEmpty()) return 0f
+    val avg = values.map { (it / divisor).coerceIn(0.0, 10.0) }.average()
+    return avg.toFloat()
 }
