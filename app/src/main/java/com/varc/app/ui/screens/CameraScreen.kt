@@ -8,12 +8,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.video.AudioSpec
 import androidx.camera.video.Recorder
 import androidx.camera.video.Recording
 import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
-import androidx.compose.runtime.CoroutineScope
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.suspendCancellableCoroutine
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.*
@@ -92,8 +91,7 @@ fun CameraScreen(
 
     fun startRecording(file: File) {
         currentRecording = recorder.prepareRecording(context, file)
-            .withAudioEnabled(AudioSpec.DEFAULT)
-            .start(ContextCompat.getMainExecutor(context)) { event ->
+            .start(ContextCompat.getMainExecutor(context)) { event: VideoRecordEvent ->
                 when (event) {
                     is VideoRecordEvent.Start -> {}
                     is VideoRecordEvent.Finalize -> {
@@ -261,7 +259,7 @@ private suspend fun awaitCameraProvider(context: Context): ProcessCameraProvider
     val future = ProcessCameraProvider.getInstance(context)
     future.addListener({
         if (cont.isActive) {
-            try { cont.resume(future.get()) } catch (e: Exception) { cont.resumeWithException(e) }
+            try { cont.resume(future.get(), onCancellation = null) } catch (e: Exception) { cont.resumeWithException(e) }
         }
     }, ContextCompat.getMainExecutor(context))
 }
