@@ -21,6 +21,7 @@ import com.varc.app.data.SessionRepository
 import com.varc.app.data.models.DetectedElement
 import com.varc.app.data.models.ScoringResult
 import com.varc.app.ml.ElementClassifier
+import com.varc.app.ml.FileLog
 import com.varc.app.ml.PoseEstimator
 import com.varc.app.scoring.ScoringEngine
 import kotlinx.coroutines.Dispatchers
@@ -153,12 +154,13 @@ private fun processVideo(
 ) {
     setProcessing(true)
     onProgress(0f)
+    FileLog.init(context)
     scope.launch {
-        val estimator = PoseEstimator()
+        val estimator = PoseEstimator(context)
         try {
             onProgress(0.05f)
             val estimateProgress = { f: Float -> onProgress(0.05f + f * 0.45f) }
-            val poses = withContext(Dispatchers.IO) { estimator.processVideo(context, uri, onProgress = estimateProgress) }
+            val poses = withContext(Dispatchers.IO) { estimator.processVideo(uri, onProgress = estimateProgress) }
             onProgress(0.5f)
             val result = if (poses.isNotEmpty()) {
                 val timestamps = poses.indices.map { it * 0.2f }
@@ -179,6 +181,7 @@ private fun processVideo(
             onComplete(uri.toString())
         } finally {
             estimator.release()
+            FileLog.exportToDownloads(context)
             setProcessing(false)
         }
     }

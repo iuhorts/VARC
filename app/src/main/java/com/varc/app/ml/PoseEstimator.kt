@@ -1,10 +1,14 @@
 package com.varc.app.ml
 
+import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
+
+import android.provider.MediaStore
 import android.util.Log
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.pose.Pose
@@ -14,6 +18,10 @@ import com.google.mlkit.vision.pose.defaults.PoseDetectorOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.coroutines.resume
 
 data class PoseData(
@@ -29,7 +37,70 @@ data class PoseLandmark(
     val inFrameLikelihood: Float
 )
 
-class PoseEstimator {
+object FileLog {
+    private var writer: java.io.FileWriter? = null
+    private var logDir: File? = null
+    private const val FILE_NAME = "varc_log.txt"
+
+    fun init(context: Context) {
+        try {
+            logDir = context.cacheDir
+            val file = File(logDir, FILE_NAME)
+            file.createNewFile()
+            writer = java.io.FileWriter(file, false)
+            writeLine("=== VARC Debug Log ===")
+            writeLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
+            writeLine("Android: ${Build.VERSION.SDK_INT}")
+            writeLine("Time: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}")
+        } catch (e: Exception) {
+            Log.e("VARC-FileLog", "init failed", e)
+        }
+    }
+
+    fun writeLine(msg: String) {
+        try {
+            writer?.write("$msg\n")
+            writer?.flush()
+        } catch (_: Exception) {}
+    }
+
+    fun exportToDownloads(context: Context): Uri? {
+        close()
+        val file = File(logDir, FILE_NAME)
+        if (!file.exists()) return null
+        return try {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, FILE_NAME)
+                put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+            }
+            val resolver = context.contentResolver
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            if (uri != null) {
+                resolver.openOutputStream(uri)?.use { os ->
+                    file.inputStream().use { `is` -> `is`.copyTo(os) }
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    values.clear()
+                    values.put(MediaStore.Downloads.IS_PENDING, 0)
+                    resolver.update(uri, values, null, null)
+                }
+            }
+            uri
+        } catch (e: Exception) {
+            Log.e("VARC-FileLog", "export failed", e)
+            null
+        }
+    }
+
+    private fun close() {
+        try { writer?.close() } catch (_: Exception) {}
+    }
+}
+
+class PoseEstimator(private val context: Context) {
 
     private val detector: PoseDetector = PoseDetection.getClient(
         PoseDetectorOptions.Builder()
@@ -42,6 +113,24 @@ class PoseEstimator {
         private const val MAX_IMAGE_DIM = 360
     }
 
+    private fun log(msg: String) {
+        Log.d(TAG, msg)
+        FileLog.writeLine("[PoseEstimator] $msg")
+    }
+
+    private fun logWarn(msg: String) {
+        Log.w(TAG, msg)
+        FileLog.writeLine("[WARN] [PoseEstimator] $msg")
+    }
+
+    private fun logError(msg: String, e: Throwable? = null) {
+        Log.e(TAG, msg, e)
+        FileLog.writeLine("[ERROR] [PoseEstimator] $msg${if (e != null) ": ${e::class.simpleName}: ${e.message}" else ""}")
+        e?.let {
+            FileLog.writeLine("[ERROR] stacktrace: ${it.stackTraceToString().take(500)}")
+        }
+    }
+
     private fun scaleBitmap(bitmap: Bitmap): Bitmap {
         val (w, h) = bitmap.width to bitmap.height
         val maxDim = maxOf(w, h)
@@ -49,7 +138,7 @@ class PoseEstimator {
         val scale = MAX_IMAGE_DIM.toFloat() / maxDim
         val newW = (w * scale).toInt().coerceAtLeast(1)
         val newH = (h * scale).toInt().coerceAtLeast(1)
-        Log.d(TAG, "Scaling ${w}x$h -> ${newW}x${newH}")
+        log("Scaling ${w}x$h -> ${newW}x${newH}")
         return Bitmap.createScaledBitmap(bitmap, newW, newH, true)
     }
 
@@ -63,7 +152,8 @@ class PoseEstimator {
                     .addOnSuccessListener { result ->
                         if (!cont.isCancelled) cont.resume(result)
                     }
-                    .addOnFailureListener {
+                    .addOnFailureListener { e ->
+                        logWarn("ML Kit failure: ${e.message}")
                         if (!cont.isCancelled) cont.resume(null)
                     }
             } ?: return@withContext null
@@ -78,13 +168,13 @@ class PoseEstimator {
                     inFrameLikelihood = lm.inFrameLikelihood
                 )
             }
-            Log.d(TAG, "Estimated pose: ${landmarks.size} landmarks")
+            log("Estimated pose: ${landmarks.size} landmarks")
             PoseData(landmarks)
         } catch (e: OutOfMemoryError) {
-            Log.e(TAG, "OOM in pose estimation", e)
+            logError("OOM in pose estimation", e)
             null
         } catch (e: Throwable) {
-            Log.e(TAG, "Error estimating pose", e)
+            logError("Error estimating pose", e)
             null
         } finally {
             if (scaled != null && scaled !== bitmap) scaled.recycle()
@@ -92,7 +182,6 @@ class PoseEstimator {
     }
 
     suspend fun processVideo(
-        context: Context,
         videoUri: Uri,
         maxFrames: Int = 30,
         onProgress: ((Float) -> Unit)? = null
@@ -102,38 +191,43 @@ class PoseEstimator {
         try {
             retriever.setDataSource(context, videoUri)
             val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            Log.d(TAG, "Video duration: ${durationMs}ms, maxFrames=$maxFrames")
+            log("Video duration: ${durationMs}ms, maxFrames=$maxFrames")
             if (durationMs <= 0) {
-                Log.e(TAG, "Could not read video duration")
+                logError("Could not read video duration")
                 return@withContext poses
             }
             val intervalMs = (durationMs / maxFrames).coerceAtLeast(100L)
-            Log.d(TAG, "Frame interval: ${intervalMs}ms")
+            log("Frame interval: ${intervalMs}ms")
             var timeMs = 0L
             var frameCount = 0
             while (timeMs < durationMs && frameCount < maxFrames) {
-                Log.d(TAG, "Getting frame at ${timeMs}ms (${timeMs*1000}us)")
-                val bitmap = retriever.getFrameAtTime(timeMs * 1000, MediaMetadataRetriever.OPTION_CLOSEST)
+                log("Getting frame at ${timeMs}ms")
+                val bitmap = try {
+                    retriever.getFrameAtTime(timeMs * 1000, MediaMetadataRetriever.OPTION_CLOSEST)
+                } catch (e: Throwable) {
+                    logError("getFrameAtTime failed", e)
+                    null
+                }
                 if (bitmap != null) {
-                    Log.d(TAG, "Frame $frameCount: ${bitmap.width}x${bitmap.height}, size=${bitmap.byteCount}")
+                    log("Frame $frameCount: ${bitmap.width}x${bitmap.height}, size=${bitmap.byteCount}")
                     estimatePose(bitmap)?.let { poses.add(it) }
                     bitmap.recycle()
                     frameCount++
                     if (frameCount % 5 == 0) {
-                        Log.d(TAG, "GC hint at frame $frameCount")
+                        log("GC hint at frame $frameCount")
                         System.gc()
                     }
                     onProgress?.invoke(frameCount.toFloat() / maxFrames)
                 } else {
-                    Log.w(TAG, "No bitmap at ${timeMs}ms")
+                    logWarn("No bitmap at ${timeMs}ms")
                 }
                 timeMs += intervalMs
             }
-            Log.d(TAG, "Processed $frameCount frames, ${poses.size} had poses")
+            log("Processed $frameCount frames, ${poses.size} had poses")
         } catch (e: OutOfMemoryError) {
-            Log.e(TAG, "OOM processing video at frame ${poses.size}", e)
+            logError("OOM processing video at frame ${poses.size}", e)
         } catch (e: Throwable) {
-            Log.e(TAG, "Error processing video", e)
+            logError("Error processing video", e)
         } finally {
             try { retriever.release() } catch (_: Exception) {}
         }
@@ -141,7 +235,7 @@ class PoseEstimator {
     }
 
     fun release() {
-        Log.d(TAG, "Releasing detector")
+        log("Releasing detector")
         detector.close()
     }
 }
