@@ -168,7 +168,7 @@ private fun processVideo(
             val result = if (poses.isNotEmpty()) {
                 val timestamps = poses.indices.map { it * 0.2f }
                 val classification = ElementClassifier.classifyFromPoseData(poses, timestamps)
-                FileLog.writeLine("[CameraScreen] Step 3: classification done, ${classification.size} elements")
+                FileLog.writeLine("[CameraScreen] Step 3: classification done, ${classification.elements.size} elements")
                 onProgress(0.7f)
                 ScoringEngine.calculateScore(classification)
             } else {
