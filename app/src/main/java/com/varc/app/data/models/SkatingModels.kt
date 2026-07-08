@@ -50,10 +50,10 @@ fun DetectedElement.toJson(): JSONObject {
         put("baseValue", baseValue)
         put("goe", goe)
         put("finalValue", finalValue)
-        put("timestampStart", timestampStart)
-        put("timestampEnd", timestampEnd)
+        put("timestampStart", timestampStart.toDouble())
+        put("timestampEnd", timestampEnd.toDouble())
         put("isValid", isValid)
-        put("confidence", confidence)
+        put("confidence", confidence.toDouble())
     }
 }
 
@@ -64,7 +64,7 @@ fun ScoringResult.toJson(): JSONObject {
         put("tes", tes)
         put("deductions", deductions)
         put("totalScore", totalScore)
-        put("programDuration", programDuration)
+        put("programDuration", programDuration.toDouble())
         val elementsArray = org.json.JSONArray()
         elements.forEach { elementsArray.put(it.toJson()) }
         put("elements", elementsArray)
