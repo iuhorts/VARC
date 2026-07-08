@@ -1,24 +1,11 @@
 package com.varc.app.ui.screens
 
-import android.Manifest
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.video.ExperimentalVideoApi
-import androidx.camera.video.Recorder
-import androidx.camera.video.Recording
-import androidx.camera.video.VideoCapture
-import androidx.camera.video.VideoRecordEvent
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.suspendCancellableCoroutine
-import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -30,9 +17,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.varc.app.data.SessionRepository
 import com.varc.app.data.models.DetectedElement
 import com.varc.app.data.models.ScoringResult
@@ -42,10 +26,8 @@ import com.varc.app.scoring.ScoringEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.util.concurrent.Executors
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalVideoApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CameraScreen(
     hasPermission: Boolean,
@@ -54,30 +36,11 @@ fun CameraScreen(
     onNavigateToProfile: () -> Unit
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
-    var isRecording by remember { mutableStateOf(false) }
     var videoUri by remember { mutableStateOf<Uri?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
     var progressValue by remember { mutableFloatStateOf(0f) }
     val repository = remember { SessionRepository(context) }
-    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
-    var currentRecording by remember { mutableStateOf<Recording?>(null) }
-
-    val preview = remember { Preview.Builder().build() }
-    val recorder = remember { Recorder.Builder().build() }
-    val videoCapture = remember { VideoCapture.withOutput(recorder) }
-
-    LaunchedEffect(lifecycleOwner) {
-        try {
-            val provider = awaitCameraProvider(context)
-            provider.unbindAll()
-            provider.bindToLifecycle(
-                lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA,
-                preview, videoCapture
-            )
-        } catch (_: Exception) {}
-    }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
@@ -87,44 +50,6 @@ fun CameraScreen(
             processVideo(context, uri, repository, onAnalysisComplete, { progressValue = it }, scope) {
                 isProcessing = it
             }
-        }
-    }
-
-    fun startRecording(file: File) {
-        currentRecording = recorder.prepareRecording(context, file)
-            .start(ContextCompat.getMainExecutor(context)) { event: VideoRecordEvent ->
-                when (event) {
-                    is VideoRecordEvent.Start -> {}
-                    is VideoRecordEvent.Finalize -> {
-                        if (event.error == VideoRecordEvent.Finalize.ERROR_NONE) {
-                            val uri = event.outputResults.outputUri
-                            videoUri = uri
-                            processVideo(context, uri, repository, onAnalysisComplete, { progressValue = it }, scope) {
-                                isProcessing = it
-                            }
-                        }
-                    }
-                }
-            }
-    }
-
-    fun toggleRecording() {
-        if (isRecording) {
-            currentRecording?.stop()
-            currentRecording = null
-            isRecording = false
-        } else {
-            isRecording = true
-            val dir = File(context.cacheDir, "varc_recordings").also { it.mkdirs() }
-            val file = File(dir, "recording_${System.currentTimeMillis()}.mp4")
-            startRecording(file)
-        }
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            currentRecording?.stop()
-            cameraExecutor.shutdown()
         }
     }
 
@@ -148,25 +73,7 @@ fun CameraScreen(
             modifier = Modifier.fillMaxSize().padding(padding),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (!hasPermission) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Outlined.VideocamOff, contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("Se necesita permiso de cámara",
-                            style = MaterialTheme.typography.titleMedium)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(onClick = onRequestPermission) {
-                            Text("Conceder permiso")
-                        }
-                    }
-                }
-            } else if (isProcessing) {
+            if (isProcessing) {
                 Box(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentAlignment = Alignment.Center
@@ -188,81 +95,51 @@ fun CameraScreen(
                 }
             } else {
                 Box(
-                    modifier = Modifier.fillMaxWidth().weight(1f).padding(16.dp),
+                    modifier = Modifier.fillMaxWidth().weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (videoUri != null) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (videoUri != null) {
                             Icon(Icons.Outlined.CheckCircle, contentDescription = null,
                                 modifier = Modifier.size(72.dp),
                                 tint = MaterialTheme.colorScheme.primary)
                             Spacer(modifier = Modifier.height(16.dp))
                             Text("Vídeo seleccionado",
                                 style = MaterialTheme.typography.titleLarge)
-                            Spacer(modifier = Modifier.height(24.dp))
+                        } else {
+                            Icon(Icons.Outlined.Videocam, contentDescription = null,
+                                modifier = Modifier.size(72.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("Selecciona un vídeo de la galería",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                    } else {
-                        AndroidView(
-                            factory = { ctx ->
-                                PreviewView(ctx).also { view ->
-                                    preview.setSurfaceProvider(view.surfaceProvider)
-                                }
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
                     }
                 }
             }
 
-            if (hasPermission && !isProcessing) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(24.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(24.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilledTonalButton(
+                    onClick = { galleryLauncher.launch("video/*") },
+                    modifier = Modifier.size(72.dp), shape = CircleShape
                 ) {
-                    FilledTonalButton(
-                        onClick = { galleryLauncher.launch("video/*") },
-                        modifier = Modifier.size(64.dp), shape = CircleShape
-                    ) {
-                        Icon(Icons.Outlined.PhotoLibrary, contentDescription = "Galería",
-                            modifier = Modifier.size(28.dp))
-                    }
-
-                    Button(
-                        onClick = { toggleRecording() },
-                        modifier = Modifier.size(72.dp), shape = CircleShape,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isRecording)
-                                MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        Icon(
-                            if (isRecording) Icons.Filled.Stop else Icons.Filled.FiberManualRecord,
-                            contentDescription = if (isRecording) "Detener" else "Grabar",
-                            modifier = Modifier.size(32.dp),
-                            tint = MaterialTheme.colorScheme.onPrimary
-                        )
-                    }
+                    Icon(Icons.Outlined.PhotoLibrary, contentDescription = "Galería",
+                        modifier = Modifier.size(28.dp))
                 }
-
-                Text(
-                    if (isRecording) "Grabando…" else "Grabar o seleccionar vídeo",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
+
+            Text(
+                "Seleccionar vídeo de galería",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
-}
-
-private suspend fun awaitCameraProvider(context: Context): ProcessCameraProvider = suspendCancellableCoroutine { cont ->
-    val future = ProcessCameraProvider.getInstance(context)
-    future.addListener({
-        if (cont.isActive) {
-            try { cont.resume(future.get(), onCancellation = null) } catch (e: Exception) { cont.resumeWith(Result.failure(e)) }
-        }
-    }, ContextCompat.getMainExecutor(context))
 }
 
 private fun processVideo(
@@ -271,7 +148,7 @@ private fun processVideo(
     repository: SessionRepository,
     onComplete: (String) -> Unit,
     onProgress: (Float) -> Unit,
-    scope: CoroutineScope,
+    scope: kotlinx.coroutines.CoroutineScope,
     setProcessing: (Boolean) -> Unit
 ) {
     setProcessing(true)

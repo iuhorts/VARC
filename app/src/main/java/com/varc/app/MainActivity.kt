@@ -1,17 +1,12 @@
 package com.varc.app
 
-import android.Manifest
-import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.core.content.ContextCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -21,17 +16,8 @@ import com.varc.app.ui.screens.ResultsScreen
 import com.varc.app.ui.theme.VARCTheme
 
 class MainActivity : ComponentActivity() {
-    private var hasCameraPermission by mutableStateOf(false)
-
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        hasCameraPermission = permissions[Manifest.permission.CAMERA] == true
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        checkAndRequestPermissions()
         setContent {
             VARCTheme {
                 Surface(
@@ -42,8 +28,8 @@ class MainActivity : ComponentActivity() {
                     NavHost(navController = navController, startDestination = "camera") {
                         composable("camera") {
                             CameraScreen(
-                                hasPermission = hasCameraPermission,
-                                onRequestPermission = { checkAndRequestPermissions() },
+                                hasPermission = true,
+                                onRequestPermission = {},
                                 onAnalysisComplete = { videoPath ->
                                     navController.navigate("results/$videoPath")
                                 },
@@ -67,18 +53,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-        }
-    }
-
-    private fun checkAndRequestPermissions() {
-        val cameraGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
-                PackageManager.PERMISSION_GRANTED
-        if (cameraGranted) {
-            hasCameraPermission = true
-        } else {
-            requestPermissionLauncher.launch(
-                arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
-            )
         }
     }
 }
