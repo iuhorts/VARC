@@ -29,9 +29,11 @@ data class ScoringResult(
     val videoPath: String = "",
     val elements: List<DetectedElement> = emptyList(),
     val tes: Double = 0.0,
+    val pcs: Double = 0.0,
     val deductions: Double = 0.0,
     val totalScore: Double = 0.0,
-    val programDuration: Float = 0f
+    val programDuration: Float = 0f,
+    val programComponents: ProgramComponents = ProgramComponents()
 )
 
 data class ProgramComponents(
@@ -62,9 +64,15 @@ fun ScoringResult.toJson(): JSONObject {
         put("timestamp", timestamp)
         put("videoPath", videoPath)
         put("tes", tes)
+        put("pcs", pcs)
         put("deductions", deductions)
         put("totalScore", totalScore)
         put("programDuration", programDuration.toDouble())
+        put("skills", programComponents.skills.toDouble())
+        put("transitions", programComponents.transitions.toDouble())
+        put("performanceComp", programComponents.performance.toDouble())
+        put("choreography", programComponents.choreography.toDouble())
+        put("interpretation", programComponents.interpretation.toDouble())
         val elementsArray = org.json.JSONArray()
         elements.forEach { elementsArray.put(it.toJson()) }
         put("elements", elementsArray)

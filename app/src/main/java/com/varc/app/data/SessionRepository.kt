@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.varc.app.data.models.DetectedElement
+import com.varc.app.data.models.ProgramComponents
 import com.varc.app.data.models.ScoringResult
 import com.varc.app.data.models.toJson
 import kotlinx.coroutines.flow.Flow
@@ -53,9 +54,17 @@ class SessionRepository(private val context: Context) {
                     videoPath = obj.optString("videoPath", ""),
                     elements = elements,
                     tes = obj.optDouble("tes", 0.0),
+                    pcs = obj.optDouble("pcs", 0.0),
                     deductions = obj.optDouble("deductions", 0.0),
                     totalScore = obj.optDouble("totalScore", 0.0),
-                    programDuration = obj.optDouble("programDuration", 0.0).toFloat()
+                    programDuration = obj.optDouble("programDuration", 0.0).toFloat(),
+                    programComponents = ProgramComponents(
+                        skills = obj.optDouble("skills", 0.0).toFloat(),
+                        transitions = obj.optDouble("transitions", 0.0).toFloat(),
+                        performance = obj.optDouble("performanceComp", 0.0).toFloat(),
+                        choreography = obj.optDouble("choreography", 0.0).toFloat(),
+                        interpretation = obj.optDouble("interpretation", 0.0).toFloat()
+                    )
                 )
             }.sortedByDescending { it.timestamp }
         }

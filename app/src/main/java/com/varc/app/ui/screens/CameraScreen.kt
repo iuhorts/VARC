@@ -17,9 +17,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.varc.app.data.ProfileRepository
 import com.varc.app.data.SessionRepository
 import com.varc.app.data.models.DetectedElement
 import com.varc.app.data.models.ScoringResult
+import com.varc.app.data.models.SkaterProfile
 import com.varc.app.ml.ElementClassifier
 import com.varc.app.ml.FileLog
 import com.varc.app.ml.PoseEstimator
@@ -42,13 +44,16 @@ fun CameraScreen(
     var isProcessing by remember { mutableStateOf(false) }
     var progressValue by remember { mutableFloatStateOf(0f) }
     val repository = remember { SessionRepository(context) }
+    val profileRepo = remember { ProfileRepository(context) }
+    val profile by profileRepo.getProfile().collectAsState(initial = SkaterProfile())
 
     val galleryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
             videoUri = uri
-            processVideo(context, uri, repository, onAnalysisComplete, { progressValue = it }, scope) {
+            processVideo(context, uri, repository, profile.category.lowercase(),
+                onAnalysisComplete, { progressValue = it }, scope) {
                 isProcessing = it
             }
         }
@@ -147,6 +152,7 @@ private fun processVideo(
     context: Context,
     uri: Uri,
     repository: SessionRepository,
+    profileCategory: String,
     onComplete: () -> Unit,
     onProgress: (Float) -> Unit,
     scope: kotlinx.coroutines.CoroutineScope,
@@ -170,7 +176,7 @@ private fun processVideo(
                 val classification = ElementClassifier.classifyFromPoseData(poses, timestamps)
                 FileLog.writeLine("[CameraScreen] Step 3: classification done, ${classification.elements.size} elements")
                 onProgress(0.7f)
-                ScoringEngine.calculateScore(classification)
+                ScoringEngine.calculateScore(classification, profileCategory)
             } else {
                 FileLog.writeLine("[CameraScreen] No poses, using fallback")
                 ScoringResult(videoPath = uri.toString(), tes = 0.0, totalScore = 0.0,

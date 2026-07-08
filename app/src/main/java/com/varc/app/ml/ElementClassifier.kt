@@ -15,12 +15,9 @@ object ElementClassifier {
         poseSequence: List<PoseData>,
         frameTimestamps: List<Float>
     ): ClassificationResult {
-        val elements = mutableListOf<DetectedElement>()
-        var fallDetected = false
         val duration = if (frameTimestamps.isNotEmpty()) frameTimestamps.last() else 0f
-
-        if (poseSequence.size < 3) {
-            return ClassificationResult(elements, false, duration)
+        if (poseSequence.size < 5) {
+            return ClassificationResult(emptyList(), false, duration)
         }
 
         val landmarks = (0..32).associateWith { type ->
@@ -29,195 +26,290 @@ object ElementClassifier {
             }
         }
 
-        fallDetected = detectFall(poseSequence, landmarks)
+        val bodyHeight = estimateBodyHeight(landmarks)
+        val fallDetected = detectFall(poseSequence, landmarks)
+        val jumps = detectJumps(poseSequence, landmarks, frameTimestamps, bodyHeight)
+        val spins = detectSpins(poseSequence, landmarks, frameTimestamps, bodyHeight)
+        val allElements = mergeOverlapping(jumps + spins)
 
-        detectJumps(poseSequence, landmarks, frameTimestamps)?.let { elements.addAll(it) }
-        detectSpins(poseSequence, landmarks, frameTimestamps)?.let { elements.addAll(it) }
-
-        if (elements.isEmpty()) {
+        if (allElements.isEmpty()) {
             val midIdx = poseSequence.size / 2
-            val start = frameTimestamps.getOrElse(midIdx - 10) { 0f }.coerceAtLeast(0f)
-            val end = frameTimestamps.getOrElse(midIdx + 10) { duration }.coerceAtMost(duration)
-            elements.add(DetectedElement(
+            val start = frameTimestamps.getOrElse(midIdx - 15) { 0f }.coerceAtLeast(0f)
+            val end = frameTimestamps.getOrElse(midIdx + 15) { duration }.coerceAtMost(duration)
+            allElements.add(DetectedElement(
                 type = "STEP", name = "Secuencia Coreográfica (ChSq)", level = "1",
-                baseValue = 2.00, goe = 1, goeFactors = listOf("Movimiento continuo"),
-                finalValue = 2.20, timestampStart = start, timestampEnd = end,
+                baseValue = 2.00, goe = 1,
+                goeFactors = listOf("Movimiento continuo"),
+                finalValue = 2.20,
+                timestampStart = start, timestampEnd = end,
                 confidence = 0.5f
             ))
         }
 
-        return ClassificationResult(elements, fallDetected, duration)
+        return ClassificationResult(allElements, fallDetected, duration)
     }
 
-    private fun landmarkPos(landmarks: Map<Int, List<PoseLandmark>>, type: Int, frameIdx: Int): Triple<Float, Float, Float>? {
-        val lm = landmarks[type]?.getOrNull(frameIdx) ?: return null
-        return Triple(lm.x, lm.y, lm.z)
+    private fun estimateBodyHeight(landmarks: Map<Int, List<PoseLandmark>>): Float {
+        val nose = landmarks[0]?.firstOrNull() ?: return 240f
+        val ankle = landmarks[27]?.firstOrNull() ?: landmarks[28]?.firstOrNull() ?: return 240f
+        return abs(nose.y - ankle.y) * 1.2f
     }
 
-    private fun avgLandmarkPos(landmarks: Map<Int, List<PoseLandmark>>, type: Int): Triple<Float, Float, Float>? {
-        val list = landmarks[type] ?: return null
-        if (list.isEmpty()) return null
-        val avgX = list.map { it.x }.average().toFloat()
-        val avgY = list.map { it.y }.average().toFloat()
-        val avgZ = list.map { it.z }.average().toFloat()
-        return Triple(avgX, avgY, avgZ)
-    }
-
-    private fun angleBetween(p1: Triple<Float, Float, Float>, p2: Triple<Float, Float, Float>, p3: Triple<Float, Float, Float>): Float {
-        val v1 = Triple(p1.first - p2.first, p1.second - p2.second, p1.third - p2.third)
-        val v2 = Triple(p3.first - p2.first, p3.second - p2.second, p3.third - p2.third)
-        val dot = v1.first * v2.first + v1.second * v2.second + v1.third * v2.third
-        val mag1 = sqrt(v1.first * v1.first + v1.second * v1.second + v1.third * v1.third)
-        val mag2 = sqrt(v2.first * v2.first + v2.second * v2.second + v2.third * v2.third)
-        if (mag1 == 0f || mag2 == 0f) return 0f
-        return (acos((dot / (mag1 * mag2)).coerceIn(-1f, 1f)) * 180f / PI).toFloat()
-    }
-
-    private fun distance2D(p1: Triple<Float, Float, Float>, p2: Triple<Float, Float, Float>): Float {
-        return sqrt((p1.first - p2.first).pow(2) + (p1.second - p2.second).pow(2))
-    }
-
-    private fun detectFall(poseSequence: List<PoseData>, landmarks: Map<Int, List<PoseLandmark>>): Boolean {
-        if (poseSequence.size < 5) return false
-        val framesToCheck = (poseSequence.size / 2).coerceAtLeast(5)
-        for (i in (poseSequence.size - framesToCheck) until poseSequence.size) {
-            val leftHip = landmarks[23]?.getOrNull(i)
-            val rightHip = landmarks[24]?.getOrNull(i)
-            val nose = landmarks[0]?.getOrNull(i)
-            if (leftHip != null && rightHip != null && nose != null) {
-                val hipY = (leftHip.y + rightHip.y) / 2f
-                if (nose.y > hipY + 50f) return true
+    private fun mergeOverlapping(elements: List<DetectedElement>): MutableList<DetectedElement> {
+        val sorted = elements.sortedBy { it.timestampStart }
+        val merged = mutableListOf<DetectedElement>()
+        for (elem in sorted) {
+            val idx = merged.indexOfLast { overlapRatio(it, elem) > 0.4f }
+            if (idx >= 0) {
+                if (elem.confidence > merged[idx].confidence) merged[idx] = elem
+            } else {
+                merged.add(elem)
             }
         }
-        return false
+        return merged
     }
+
+    private fun overlapRatio(a: DetectedElement, b: DetectedElement): Float {
+        val start = maxOf(a.timestampStart, b.timestampStart)
+        val end = minOf(a.timestampEnd, b.timestampEnd)
+        if (start >= end) return 0f
+        val overlap = end - start
+        return overlap / minOf(a.timestampEnd - a.timestampStart, b.timestampEnd - b.timestampStart)
+    }
+
+    private fun angle2D(a: Triple<Float, Float, Float>, b: Triple<Float, Float, Float>, c: Triple<Float, Float, Float>): Float {
+        val v1 = Pair(a.first - b.first, a.second - b.second)
+        val v2 = Pair(c.first - b.first, c.second - b.second)
+        val dot = v1.first * v2.first + v1.second * v2.second
+        val m1 = sqrt(v1.first * v1.first + v1.second * v1.second)
+        val m2 = sqrt(v2.first * v2.first + v2.second * v2.second)
+        if (m1 == 0f || m2 == 0f) return 0f
+        return (acos((dot / (m1 * m2)).coerceIn(-1f, 1f)) * 180f / PI).toFloat()
+    }
+
+    // ── Fall Detection ──────────────────────────────────────
+
+    private fun detectFall(
+        poseSequence: List<PoseData>,
+        landmarks: Map<Int, List<PoseLandmark>>
+    ): Boolean {
+        if (poseSequence.size < 5) return false
+        val checkCount = (poseSequence.size / 3).coerceAtLeast(3)
+        val startIdx = (poseSequence.size - checkCount).coerceAtLeast(0)
+        var fallFrames = 0
+        for (i in startIdx until poseSequence.size) {
+            val lh = landmarks[23]?.getOrNull(i) ?: continue
+            val rh = landmarks[24]?.getOrNull(i) ?: continue
+            val nose = landmarks[0]?.getOrNull(i) ?: continue
+            val hipY = (lh.y + rh.y) / 2f
+            if (nose.y > hipY + 30f) fallFrames++
+        }
+        return fallFrames >= (checkCount * 0.4f)
+    }
+
+    // ── Jump Detection ──────────────────────────────────────
 
     private fun detectJumps(
         poseSequence: List<PoseData>,
         landmarks: Map<Int, List<PoseLandmark>>,
-        timestamps: List<Float>
-    ): List<DetectedElement>? {
-        if (poseSequence.size < 8) return null
+        timestamps: List<Float>,
+        bodyHeight: Float
+    ): List<DetectedElement> {
+        val n = poseSequence.size
+        if (n < 8) return emptyList()
+
+        val hipY = Array<Float?>(n) { i ->
+            val lh = landmarks[23]?.getOrNull(i) ?: return@Array null
+            val rh = landmarks[24]?.getOrNull(i) ?: return@Array null
+            (lh.y + rh.y) / 2f
+        }
+
+        val smooth = Array<Float?>(n) { i ->
+            var sum = 0f; var cnt = 0
+            for (j in (i - 1)..(i + 1)) { val v = hipY.getOrNull(j) ?: continue; sum += v; cnt++ }
+            if (cnt > 0) sum / cnt else null
+        }
+
+        val shoulderAngle = Array<Float?>(n) { i ->
+            val ls = landmarks[11]?.getOrNull(i) ?: return@Array null
+            val rs = landmarks[12]?.getOrNull(i) ?: return@Array null
+            atan2(rs.y - ls.y, rs.x - ls.x)
+        }
+
+        val leftKnee = Array<Float?>(n) { i ->
+            val h = landmarks[23]?.getOrNull(i) ?: return@Array null
+            val k = landmarks[25]?.getOrNull(i) ?: return@Array null
+            val a = landmarks[27]?.getOrNull(i) ?: return@Array null
+            angle2D(Triple(h.x, h.y, 0f), Triple(k.x, k.y, 0f), Triple(a.x, a.y, 0f))
+        }
+        val rightKnee = Array<Float?>(n) { i ->
+            val h = landmarks[24]?.getOrNull(i) ?: return@Array null
+            val k = landmarks[26]?.getOrNull(i) ?: return@Array null
+            val a = landmarks[28]?.getOrNull(i) ?: return@Array null
+            angle2D(Triple(h.x, h.y, 0f), Triple(k.x, k.y, 0f), Triple(a.x, a.y, 0f))
+        }
+
+        val minJumpPx = (bodyHeight * 0.04f).coerceAtLeast(8f)
         val elements = mutableListOf<DetectedElement>()
 
-        val hipCenterY = (0 until poseSequence.size).map { i ->
-            val lh = landmarks[23]?.getOrNull(i)
-            val rh = landmarks[24]?.getOrNull(i)
-            if (lh != null && rh != null) (lh.y + rh.y) / 2f else null
+        for (i in 1 until n - 1) {
+            val prev = smooth[i - 1] ?: continue
+            val curr = smooth[i] ?: continue
+            val next = smooth[i + 1] ?: continue
+
+            if (curr >= prev || curr >= next) continue
+
+            val displacement = maxOf(prev, next) - curr
+            if (displacement < minJumpPx) continue
+
+            val hasKneeBend = (leftKnee.getOrNull(i - 1)?.let { it < 150f } == true) ||
+                              (rightKnee.getOrNull(i - 1)?.let { it < 150f } == true)
+            if (!hasKneeBend) continue
+
+            val entryAngle = shoulderAngle.getOrNull(maxOf(0, i - 1)) ?: continue
+            val exitAngle = shoulderAngle.getOrNull(minOf(n - 1, i + 1))
+            val rotDeg = if (exitAngle != null) {
+                val raw = abs(exitAngle - entryAngle)
+                (raw * 180.0 / PI).coerceAtMost(720.0)
+            } else 0.0
+
+            val estimatedRotations = ((rotDeg + 90.0) / 180.0).roundToInt().coerceAtLeast(1)
+            val isAxel = rotDeg > 225.0
+
+            val (code, jname, baseVal, level) = jumpClass(estimatedRotations, isAxel)
+            val startTime = timestamps.getOrElse(maxOf(0, i - 1)) { 0f }
+            val endTime = timestamps.getOrElse(minOf(n - 1, i + 1)) { 0f }
+
+            elements.add(DetectedElement(
+                type = "JUMP", name = jname, level = level,
+                baseValue = baseVal, goe = 1,
+                goeFactors = listOf(
+                    "Rot: ~${estimatedRotations} rev",
+                    "Alt: ${"%.0f".format(displacement)}px"
+                ),
+                finalValue = baseVal * 1.1,
+                timestampStart = startTime, timestampEnd = endTime,
+                confidence = (displacement / (bodyHeight * 0.15f)).coerceIn(0f, 1f)
+            ))
         }
 
-        val hipVelocities = (1 until hipCenterY.size).mapNotNull { i ->
-            val prev = hipCenterY[i - 1]
-            val curr = hipCenterY[i]
-            if (prev != null && curr != null) curr - prev else null
-        }
-
-        var inJump = false
-        var jumpStart = 0
-        var minHipY = Float.MAX_VALUE
-        var maxHipY = Float.MIN_VALUE
-
-        for (i in hipVelocities.indices) {
-            val vel = hipVelocities[i]
-            if (!inJump && vel < -3f) {
-                inJump = true
-                jumpStart = i
-                minHipY = hipCenterY[i] ?: Float.MAX_VALUE
-                maxHipY = hipCenterY[i] ?: Float.MIN_VALUE
-            }
-            if (inJump) {
-                hipCenterY[i]?.let {
-                    if (it < minHipY) minHipY = it
-                    if (it > maxHipY) maxHipY = it
-                }
-                if (vel > 3f && (i - jumpStart) > 3) {
-                    val displacement = maxHipY - minHipY
-                    val baseVal = when {
-                        displacement > 30 -> 3.30
-                        displacement > 20 -> 2.10
-                        else -> 1.10
-                    }
-                    val name = when {
-                        displacement > 30 -> "Axel Doble (2A)"
-                        displacement > 20 -> "Lutz Doble (2Lz)"
-                        else -> "Axel Sencillo (1A)"
-                    }
-                    val level = when {
-                        displacement > 30 -> "2"
-                        displacement > 20 -> "2"
-                        else -> "1"
-                    }
-                    val startTime = timestamps.getOrElse(jumpStart) { 0f }
-                    val endTime = timestamps.getOrElse(i) { 0f }
-                    elements.add(DetectedElement(
-                        type = "JUMP", name = name, level = level,
-                        baseValue = baseVal, goe = 1,
-                        goeFactors = listOf("Altura: ${"%.0f".format(displacement)}px"),
-                        finalValue = baseVal * 1.1,
-                        timestampStart = startTime, timestampEnd = endTime,
-                        confidence = (displacement / 50f).coerceIn(0f, 1f)
-                    ))
-                    inJump = false
-                    minHipY = Float.MAX_VALUE
-                    maxHipY = Float.MIN_VALUE
-                }
-            }
-        }
-
-        return if (elements.isEmpty()) null else elements
+        return elements
     }
+
+    private data class JumpSpec(val code: String, val name: String, val baseValue: Double, val level: String)
+
+    private fun jumpClass(rot: Int, axel: Boolean): JumpSpec = when {
+        rot >= 3 && axel -> JumpSpec("3A", "Axel Triple (3A)", 8.00, "3")
+        rot >= 3 -> JumpSpec("3S", "Salchow Triple (3S)", 4.30, "3")
+        rot == 2 && axel -> JumpSpec("2A", "Axel Doble (2A)", 3.30, "2")
+        rot == 2 -> JumpSpec("2S", "Salchow Doble (2S)", 1.30, "2")
+        rot == 1 && axel -> JumpSpec("1A", "Axel Sencillo (1A)", 1.10, "1")
+        else -> JumpSpec("1T", "Toe Loop Sencillo (1T)", 0.40, "1")
+    }
+
+    // ── Spin Detection ──────────────────────────────────────
 
     private fun detectSpins(
         poseSequence: List<PoseData>,
         landmarks: Map<Int, List<PoseLandmark>>,
-        timestamps: List<Float>
-    ): List<DetectedElement>? {
-        if (poseSequence.size < 10) return null
-        val elements = mutableListOf<DetectedElement>()
+        timestamps: List<Float>,
+        bodyHeight: Float
+    ): List<DetectedElement> {
+        val n = poseSequence.size
+        if (n < 10) return emptyList()
 
-        val shoulderAngles = (0 until poseSequence.size).mapNotNull { i ->
-            val ls = landmarks[11]?.getOrNull(i)
-            val rs = landmarks[12]?.getOrNull(i)
-            val lh = landmarks[23]?.getOrNull(i)
-            val rh = landmarks[24]?.getOrNull(i)
-            if (ls != null && rs != null && lh != null && rh != null) {
-                val sCenter = Triple((ls.x + rs.x) / 2f, (ls.y + rs.y) / 2f, 0f)
-                val hCenter = Triple((lh.x + rh.x) / 2f, (lh.y + rh.y) / 2f, 0f)
-                angleBetween(Triple(ls.x, ls.y, 0f), sCenter, Triple(rs.x, rs.y, 0f))
-            } else null
+        val angle = Array<Double?>(n) { i ->
+            val ls = landmarks[11]?.getOrNull(i) ?: return@Array null
+            val rs = landmarks[12]?.getOrNull(i) ?: return@Array null
+            atan2((rs.y - ls.y).toDouble(), (rs.x - ls.x).toDouble())
         }
 
-        var inSpin = false
-        var spinStart = 0
-        var consecutiveRotation = 0
+        val unwrapped = mutableListOf<Double>()
+        for (a in angle) {
+            val v = a ?: continue
+            if (unwrapped.isEmpty()) { unwrapped.add(v); continue }
+            var adj = v
+            while (adj - unwrapped.last() > PI) adj -= 2.0 * PI
+            while (adj - unwrapped.last() < -PI) adj += 2.0 * PI
+            unwrapped.add(adj)
+        }
+        if (unwrapped.size < 6) return emptyList()
 
-        for (i in 1 until shoulderAngles.size) {
-            val change = abs((shoulderAngles[i] ?: 0f) - (shoulderAngles[i - 1] ?: 0f))
-            if (!inSpin && change > 10f) {
-                inSpin = true
-                spinStart = i
-                consecutiveRotation = 1
-            } else if (inSpin) {
-                if (change > 5f) {
-                    consecutiveRotation++
-                    if (consecutiveRotation > 8) {
-                        val startTime = timestamps.getOrElse(spinStart) { 0f }
-                        val endTime = timestamps.getOrElse(i) { 0f }
-                        elements.add(DetectedElement(
-                            type = "SPIN", name = "Pirueta Combinada (CoSp)", level = "2",
-                            baseValue = 2.00, goe = 1,
-                            goeFactors = listOf("Rotación: ${consecutiveRotation} frames"),
-                            finalValue = 2.20,
-                            timestampStart = startTime, timestampEnd = endTime,
-                            confidence = (consecutiveRotation / 15f).coerceIn(0f, 1f)
-                        ))
-                        inSpin = false
-                        consecutiveRotation = 0
-                    }
+        val window = 3
+        val elements = mutableListOf<DetectedElement>()
+        var start: Int? = null
+
+        for (i in window until unwrapped.size) {
+            val delta = abs(unwrapped[i] - unwrapped[i - window])
+            val degPerFrame = (delta * 180.0 / PI) / window
+            if (degPerFrame > 8.0) {
+                if (start == null) start = i - window
+            } else {
+                if (start != null && i - start >= 5) {
+                    buildSpin(landmarks, timestamps, start, i)?.let { elements.add(it) }
                 }
+                start = null
+            }
+        }
+        if (start != null && unwrapped.size - start >= 5) {
+            buildSpin(landmarks, timestamps, start, unwrapped.size - 1)?.let { elements.add(it) }
+        }
+
+        return elements
+    }
+
+    private fun buildSpin(
+        landmarks: Map<Int, List<PoseLandmark>>,
+        timestamps: List<Float>,
+        startIdx: Int, endIdx: Int
+    ): DetectedElement? {
+        val mid = (startIdx + endIdx) / 2
+        var upright = 0; var sit = 0; var camel = 0
+
+        for (i in mid - 1..mid + 1) {
+            val lh = landmarks[23]?.getOrNull(i) ?: continue
+            val rh = landmarks[24]?.getOrNull(i) ?: continue
+            val lk = landmarks[25]?.getOrNull(i) ?: continue
+            val rk = landmarks[26]?.getOrNull(i) ?: continue
+            val la = landmarks[27]?.getOrNull(i) ?: continue
+            val ra = landmarks[28]?.getOrNull(i) ?: continue
+
+            val la2 = angle2D(Triple(lh.x, lh.y, 0f), Triple(lk.x, lk.y, 0f), Triple(la.x, la.y, 0f))
+            val ra2 = angle2D(Triple(rh.x, rh.y, 0f), Triple(rk.x, rk.y, 0f), Triple(ra.x, ra.y, 0f))
+            val skate = maxOf(la2, ra2)
+            val free = minOf(la2, ra2)
+
+            when {
+                skate > 150f && free > 130f -> upright++
+                skate in 60f..130f && free in 50f..120f -> sit++
+                skate > 150f && free > 140f -> camel++
             }
         }
 
-        return if (elements.isEmpty()) null else elements
+        val total = (upright + sit + camel).coerceAtLeast(1)
+        val hasU = upright.toFloat() / total >= 0.3f
+        val hasS = sit.toFloat() / total >= 0.3f
+        val hasC = camel.toFloat() / total >= 0.3f
+        val positions = listOf(hasU, hasS, hasC).count { it }
+
+        val startTime = timestamps.getOrElse(startIdx) { 0f }
+        val endTime = timestamps.getOrElse(endIdx) { 0f }
+        val duration = endTime - startTime
+
+        val (name, baseVal, level) = when {
+            positions >= 2 -> Triple("Pirueta Combinada (CoSp)", 2.00, "2")
+            hasS -> Triple("Pirueta Sentada (SSp)", 1.30, "1")
+            hasC -> Triple("Pirueta de Ángel (CSp)", 1.20, "1")
+            else -> Triple("Pirueta Recta (USp)", 1.20, "1")
+        }
+
+        return DetectedElement(
+            type = "SPIN", name = name, level = level,
+            baseValue = baseVal, goe = 1,
+            goeFactors = listOf("Duración: ${"%.1f".format(duration)}s"),
+            finalValue = baseVal * 1.1,
+            timestampStart = startTime, timestampEnd = endTime,
+            confidence = minOf(1f, duration / 3f)
+        )
     }
 }

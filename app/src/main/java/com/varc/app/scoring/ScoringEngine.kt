@@ -1,10 +1,17 @@
 package com.varc.app.scoring
 
 import com.varc.app.data.models.DetectedElement
+import com.varc.app.data.models.ProgramComponents
 import com.varc.app.data.models.ScoringResult
 import com.varc.app.ml.ElementClassifier
 
 object ScoringEngine {
+
+    private val pcsFactors = mapOf(
+        "benjamin" to 0.8, "alevin" to 1.0, "infantil" to 1.2,
+        "cadete" to 1.4, "juvenil" to 1.6, "senior" to 2.0,
+        "master" to 1.6
+    )
 
     fun calculateScore(
         classification: ElementClassifier.ClassificationResult,
@@ -26,15 +33,28 @@ object ScoringEngine {
         val fallDeduction = if (classification.fallDetected) 1.0 else 0.0
         val deductions = fallDeduction
         val tes = kotlin.math.round((totalBaseValue - deductions) * 100.0) / 100.0
-        val estimatedPcs = 25.0
-        val totalScore = kotlin.math.round((tes + estimatedPcs) * 100.0) / 100.0
+
+        val factor = pcsFactors.entries.find { programCategory.startsWith(it.key) }?.value ?: 1.5
+        val numElements = maxOf(evaluatedElements.size, 1)
+        val basePcs = (numElements * 1.5 * factor).coerceAtMost(50.0)
+        val programComponents = ProgramComponents(
+            skills = ((numElements * 0.4 * factor).coerceAtMost(10.0)).toFloat(),
+            transitions = ((numElements * 0.3 * factor).coerceAtMost(10.0)).toFloat(),
+            performance = ((numElements * 0.3 * factor).coerceAtMost(10.0)).toFloat(),
+            choreography = ((numElements * 0.3 * factor).coerceAtMost(10.0)).toFloat(),
+            interpretation = ((numElements * 0.3 * factor).coerceAtMost(10.0)).toFloat()
+        )
+        val pcs = basePcs
+        val totalScore = kotlin.math.round((tes + pcs) * 100.0) / 100.0
 
         return ScoringResult(
             elements = evaluatedElements,
             tes = tes,
+            pcs = pcs,
             deductions = deductions,
             totalScore = totalScore,
-            programDuration = classification.programDuration
+            programDuration = classification.programDuration,
+            programComponents = programComponents
         )
     }
 }

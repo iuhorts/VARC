@@ -41,6 +41,15 @@ fun ProfileScreen(onBack: () -> Unit) {
     val sessionRepo = remember { SessionRepository(context) }
     val profile by profileRepo.getProfile().collectAsState(initial = SkaterProfile())
     val sessions by sessionRepo.getSessions().collectAsState(initial = emptyList())
+    val categories = listOf(
+        "Benjamín Femenino", "Benjamín Masculino",
+        "Alevín Femenino", "Alevín Masculino",
+        "Infantil Femenino", "Infantil Masculino",
+        "Cadete Femenino", "Cadete Masculino",
+        "Juvenil Femenino", "Juvenil Masculino",
+        "Senior Femenino", "Senior Masculino",
+        "Máster Femenino", "Máster Masculino"
+    )
 
     Scaffold(
         topBar = {
@@ -425,6 +434,7 @@ private fun SkaterInfoPanel(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EditProfileDialog(
     current: SkaterProfile,
@@ -435,6 +445,18 @@ private fun EditProfileDialog(
     var category by remember { mutableStateOf(current.category) }
     var club by remember { mutableStateOf(current.club) }
     var level by remember { mutableStateOf(current.level) }
+    var categoryExpanded by remember { mutableStateOf(false) }
+    var levelExpanded by remember { mutableStateOf(false) }
+    val categories = listOf(
+        "Benjamín Femenino", "Benjamín Masculino",
+        "Alevín Femenino", "Alevín Masculino",
+        "Infantil Femenino", "Infantil Masculino",
+        "Cadete Femenino", "Cadete Masculino",
+        "Juvenil Femenino", "Juvenil Masculino",
+        "Senior Femenino", "Senior Masculino",
+        "Máster Femenino", "Máster Masculino"
+    )
+    val levels = listOf("Iniciación", "Nacional", "Internacional")
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -446,19 +468,60 @@ private fun EditProfileDialog(
                     label = { Text("Nombre") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
-                    value = category, onValueChange = { category = it },
-                    label = { Text("Categoría") }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+
+                ExposedDropdownMenuBox(
+                    expanded = categoryExpanded,
+                    onExpandedChange = { categoryExpanded = !categoryExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = category,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Categoría") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = categoryExpanded,
+                        onDismissRequest = { categoryExpanded = false }
+                    ) {
+                        categories.forEach { cat ->
+                            DropdownMenuItem(
+                                text = { Text(cat) },
+                                onClick = { category = cat; categoryExpanded = false }
+                            )
+                        }
+                    }
+                }
+
+                ExposedDropdownMenuBox(
+                    expanded = levelExpanded,
+                    onExpandedChange = { levelExpanded = !levelExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = level,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Nivel") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = levelExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = levelExpanded,
+                        onDismissRequest = { levelExpanded = false }
+                    ) {
+                        levels.forEach { lvl ->
+                            DropdownMenuItem(
+                                text = { Text(lvl) },
+                                onClick = { level = lvl; levelExpanded = false }
+                            )
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = club, onValueChange = { club = it },
                     label = { Text("Club") }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = level, onValueChange = { level = it },
-                    label = { Text("Nivel") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
             }

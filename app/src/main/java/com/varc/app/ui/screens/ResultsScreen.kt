@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.varc.app.data.SessionRepository
 import com.varc.app.data.models.DetectedElement
+import com.varc.app.data.models.ProgramComponents
 import com.varc.app.data.models.ScoringResult
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,8 +62,12 @@ fun ResultsScreen(
                 }
 
                 item {
+                    PcsCard(result.programComponents, result.pcs)
+                }
+
+                item {
                     Text(
-                        "Elementos detectados (${result.elements.size})",
+                        "Elementos (${result.elements.size})",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -132,10 +137,53 @@ private fun ScoreSummaryCard(result: ScoringResult) {
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 ScoreItem("TES", String.format("%.1f", result.tes))
+                ScoreItem("PCS", String.format("%.1f", result.pcs))
                 ScoreItem("Deducciones", String.format("%.1f", result.deductions))
                 ScoreItem("Duración", String.format("%.1fs", result.programDuration))
             }
         }
+    }
+}
+
+@Composable
+private fun PcsCard(components: ProgramComponents, pcsTotal: Double) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Componentes del Programa",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold)
+                Text(String.format("%.1f", pcsTotal),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary)
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            PcsRow("Skills", components.skills)
+            PcsRow("Transitions", components.transitions)
+            PcsRow("Performance", components.performance)
+            PcsRow("Choreography", components.choreography)
+            PcsRow("Interpretation", components.interpretation)
+        }
+    }
+}
+
+@Composable
+private fun PcsRow(label: String, value: Float) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, style = MaterialTheme.typography.bodySmall)
+        Text(String.format("%.1f", value),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -169,6 +217,10 @@ private fun ElementCard(
         else -> Color.Gray
     }
 
+    val startSec = element.timestampStart.toInt()
+    val endSec = element.timestampEnd.toInt()
+    val timeStr = "${startSec / 60}:${"%02d".format(startSec % 60)}-${endSec / 60}:${"%02d".format(endSec % 60)}"
+
     Card(
         onClick = onToggle,
         modifier = Modifier.fillMaxWidth(),
@@ -190,9 +242,16 @@ private fun ElementCard(
                     Text(element.name,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.SemiBold)
-                    Text("Nivel ${element.level} · ${element.type}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row {
+                        Text("Nivel ${element.level} · ${element.type}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (element.confidence > 0) {
+                            Text(" · ${(element.confidence * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
 
                 Column(horizontalAlignment = Alignment.End) {
@@ -200,11 +259,9 @@ private fun ElementCard(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "GOE ${if (element.goe >= 0) "+" else ""}${element.goe}",
+                        Text(timeStr,
                             style = MaterialTheme.typography.bodySmall,
-                            color = goeColor,
-                            fontWeight = FontWeight.Bold)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(modifier = Modifier.width(4.dp))
                         Icon(
                             if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
@@ -214,23 +271,54 @@ private fun ElementCard(
                 }
             }
 
-            if (isExpanded && element.goeFactors.isNotEmpty()) {
+            if (isExpanded) {
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(16.dp)
                 ) {
-                    Text("Factores GOE",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    element.goeFactors.forEach { factor ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.CheckCircle,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = goeColor)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(factor, style = MaterialTheme.typography.bodySmall)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Valor base:", style = MaterialTheme.typography.bodySmall)
+                        Text(String.format("%.2f", element.baseValue),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("GOE:", style = MaterialTheme.typography.bodySmall)
+                        Text("${if (element.goe >= 0) "+" else ""}${element.goe}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = goeColor,
+                            fontWeight = FontWeight.SemiBold)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Tiempo:", style = MaterialTheme.typography.bodySmall)
+                        Text("${"%.1f".format(element.timestampStart)}s - ${"%.1f".format(element.timestampEnd)}s",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    if (element.goeFactors.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Factores GOE",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        element.goeFactors.forEach { factor ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Filled.CheckCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = goeColor)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(factor, style = MaterialTheme.typography.bodySmall)
+                            }
                         }
                     }
                 }
