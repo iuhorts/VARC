@@ -9,7 +9,9 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.Recorder
+import androidx.camera.video.Recording
 import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -57,9 +59,11 @@ fun CameraScreen(
     var progressValue by remember { mutableFloatStateOf(0f) }
     val repository = remember { SessionRepository(context) }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    var currentRecording by remember { mutableStateOf<Recording?>(null) }
 
     val preview = remember { Preview.Builder().build() }
-    val videoCapture = remember { VideoCapture.withOutput(Recorder.Builder().build()) }
+    val recorder = remember { Recorder.Builder().build() }
+    val videoCapture = remember { VideoCapture.withOutput(recorder) }
 
     LaunchedEffect(lifecycleOwner) {
         try {
@@ -84,23 +88,29 @@ fun CameraScreen(
     }
 
     fun startRecording(file: File) {
-        val outputOptions = Recorder.OutputFileOptions.Builder(file).build()
-        videoCapture.startRecording(outputOptions, cameraExecutor, object : VideoCapture.OnVideoSavedCallback<Recorder> {
-            override fun onVideoSaved(outputFileResults: Recorder.OutputFileResults) {
-                val uri = outputFileResults.savedUri ?: Uri.fromFile(file)
-                videoUri = uri
-                processVideo(context, uri, repository, onAnalysisComplete, { progressValue = it }, scope) {
-                    isProcessing = it
+        currentRecording = recorder.prepareRecording(context, file)
+            .withAudioEnabled()
+            .start(ContextCompat.getMainExecutor(context)) { event ->
+                when (event) {
+                    is VideoRecordEvent.Finalize -> {
+                        val uri = event.outputResults.outputUri
+                        videoUri = uri
+                        processVideo(context, uri, repository, onAnalysisComplete, { progressValue = it }, scope) {
+                            isProcessing = it
+                        }
+                    }
+                    is VideoRecordEvent.Error -> {
+                        // recording error
+                    }
+                    else -> {}
                 }
             }
-
-            override fun onError(videoCaptureError: Int, message: String, cause: Throwable?) {}
-        })
     }
 
     fun toggleRecording() {
         if (isRecording) {
-            videoCapture.stopRecording()
+            currentRecording?.stop()
+            currentRecording = null
             isRecording = false
         } else {
             isRecording = true
@@ -112,6 +122,7 @@ fun CameraScreen(
 
     DisposableEffect(Unit) {
         onDispose {
+            currentRecording?.stop()
             cameraExecutor.shutdown()
         }
     }
