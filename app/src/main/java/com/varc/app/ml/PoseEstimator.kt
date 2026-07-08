@@ -13,6 +13,7 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.pose.Pose
 import com.google.mlkit.vision.pose.PoseDetection
 import com.google.mlkit.vision.pose.PoseDetector
+import com.google.mlkit.vision.pose.defaults.PoseDetectorOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -101,7 +102,11 @@ object FileLog {
 
 class PoseEstimator(private val context: Context) {
 
-    private val detector: PoseDetector = PoseDetection.getClient()
+    private val detector: PoseDetector = PoseDetection.getClient(
+        PoseDetectorOptions.Builder()
+            .setDetectorMode(PoseDetectorOptions.SINGLE_IMAGE_MODE)
+            .build()
+    )
 
     companion object {
         private const val TAG = "VARC-Pose"
