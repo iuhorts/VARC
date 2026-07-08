@@ -24,7 +24,6 @@ import com.varc.app.data.models.ScoringResult
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ResultsScreen(
-    videoPath: String,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current

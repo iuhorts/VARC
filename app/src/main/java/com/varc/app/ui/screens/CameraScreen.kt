@@ -33,7 +33,7 @@ import kotlinx.coroutines.withContext
 fun CameraScreen(
     hasPermission: Boolean,
     onRequestPermission: () -> Unit,
-    onAnalysisComplete: (String) -> Unit,
+    onAnalysisComplete: () -> Unit,
     onNavigateToProfile: () -> Unit
 ) {
     val context = LocalContext.current
@@ -147,7 +147,7 @@ private fun processVideo(
     context: Context,
     uri: Uri,
     repository: SessionRepository,
-    onComplete: (String) -> Unit,
+    onComplete: () -> Unit,
     onProgress: (Float) -> Unit,
     scope: kotlinx.coroutines.CoroutineScope,
     setProcessing: (Boolean) -> Unit
@@ -155,32 +155,42 @@ private fun processVideo(
     setProcessing(true)
     onProgress(0f)
     FileLog.init(context)
+    FileLog.writeLine("[CameraScreen] Starting processing")
     scope.launch {
         val estimator = PoseEstimator(context)
         try {
             onProgress(0.05f)
+            FileLog.writeLine("[CameraScreen] Step 1: estimating poses")
             val estimateProgress = { f: Float -> onProgress(0.05f + f * 0.45f) }
             val poses = withContext(Dispatchers.IO) { estimator.processVideo(uri, onProgress = estimateProgress) }
             onProgress(0.5f)
+            FileLog.writeLine("[CameraScreen] Step 2: ${poses.size} poses, classifying")
             val result = if (poses.isNotEmpty()) {
                 val timestamps = poses.indices.map { it * 0.2f }
                 val classification = ElementClassifier.classifyFromPoseData(poses, timestamps)
+                FileLog.writeLine("[CameraScreen] Step 3: classification done, ${classification.size} elements")
                 onProgress(0.7f)
                 ScoringEngine.calculateScore(classification)
             } else {
+                FileLog.writeLine("[CameraScreen] No poses, using fallback")
                 ScoringResult(videoPath = uri.toString(), tes = 0.0, totalScore = 0.0,
                     elements = listOf(DetectedElement("STEP", "Secuencia Coreográfica (ChSq)", "1",
                         2.00, 1, listOf("No se pudieron detectar poses"), 2.20, 0f, 0f, confidence = 0.3f)))
             }
             onProgress(0.9f)
+            FileLog.writeLine("[CameraScreen] Step 4: saving session")
             repository.saveSession(result)
+            FileLog.writeLine("[CameraScreen] Step 5: navigating")
             onProgress(1f)
-            onComplete(uri.toString())
+            onComplete()
         } catch (e: Throwable) {
+            FileLog.writeLine("[CameraScreen] ERROR in try block: ${e::class.simpleName}: ${e.message}")
+            FileLog.writeLine("[CameraScreen] stacktrace: ${e.stackTraceToString().take(500)}")
             repository.saveSession(ScoringResult(videoPath = uri.toString(), tes = 0.0, totalScore = 0.0))
-            onComplete(uri.toString())
+            onComplete()
         } finally {
             estimator.release()
+            FileLog.writeLine("[CameraScreen] Finally: exporting log")
             FileLog.exportToDownloads(context)
             setProcessing(false)
         }
