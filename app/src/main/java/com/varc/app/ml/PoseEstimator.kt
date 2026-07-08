@@ -2,6 +2,7 @@ package com.varc.app.ml
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.graphics.Rect
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -36,9 +37,25 @@ class PoseEstimator {
             .build()
     )
 
+    companion object {
+        private const val MAX_IMAGE_DIM = 480
+    }
+
+    private fun scaleBitmap(bitmap: Bitmap): Bitmap {
+        val (w, h) = bitmap.width to bitmap.height
+        val maxDim = maxOf(w, h)
+        if (maxDim <= MAX_IMAGE_DIM) return bitmap
+        val scale = MAX_IMAGE_DIM.toFloat() / maxDim
+        val newW = (w * scale).toInt().coerceAtLeast(1)
+        val newH = (h * scale).toInt().coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(bitmap, newW, newH, true)
+    }
+
     suspend fun estimatePose(bitmap: Bitmap): PoseData? = withContext(Dispatchers.Default) {
+        var scaled: Bitmap? = null
         try {
-            val inputImage = InputImage.fromBitmap(bitmap, 0)
+            scaled = scaleBitmap(bitmap)
+            val inputImage = InputImage.fromBitmap(scaled, 0)
             val pose = suspendCancellableCoroutine<Pose?> { cont ->
                 detector.process(inputImage)
                     .addOnSuccessListener { result ->
@@ -60,12 +77,19 @@ class PoseEstimator {
                 )
             }
             PoseData(landmarks)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             null
+        } finally {
+            if (scaled != null && scaled !== bitmap) scaled.recycle()
         }
     }
 
-    suspend fun processVideo(context: Context, videoUri: Uri, maxFrames: Int = 60): List<PoseData> = withContext(Dispatchers.IO) {
+    suspend fun processVideo(
+        context: Context,
+        videoUri: Uri,
+        maxFrames: Int = 60,
+        onProgress: ((Float) -> Unit)? = null
+    ): List<PoseData> = withContext(Dispatchers.IO) {
         val poses = mutableListOf<PoseData>()
         val retriever = MediaMetadataRetriever()
         try {
@@ -74,15 +98,18 @@ class PoseEstimator {
             if (durationMs <= 0) return@withContext poses
             val intervalMs = (durationMs / maxFrames).coerceAtLeast(100L)
             var timeMs = 0L
-            while (timeMs < durationMs && poses.size < maxFrames) {
+            var frameCount = 0
+            while (timeMs < durationMs && frameCount < maxFrames) {
                 val bitmap = retriever.getFrameAtTime(timeMs * 1000, MediaMetadataRetriever.OPTION_CLOSEST)
                 if (bitmap != null) {
                     estimatePose(bitmap)?.let { poses.add(it) }
                     bitmap.recycle()
+                    frameCount++
+                    onProgress?.invoke(frameCount.toFloat() / maxFrames)
                 }
                 timeMs += intervalMs
             }
-        } catch (_: Exception) {
+        } catch (e: Throwable) {
         } finally {
             try { retriever.release() } catch (_: Exception) {}
         }

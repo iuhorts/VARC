@@ -67,7 +67,6 @@ dependencies {
     implementation("androidx.camera:camera-video:1.4.1")
 
     // ML Kit Pose Detection
-    implementation("com.google.mlkit:pose-detection:18.0.0-beta5")
     implementation("com.google.mlkit:pose-detection-accurate:18.0.0-beta5")
 
     // JSON

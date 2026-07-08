@@ -156,8 +156,9 @@ private fun processVideo(
     scope.launch {
         val estimator = PoseEstimator()
         try {
-            onProgress(0.1f)
-            val poses = withContext(Dispatchers.IO) { estimator.processVideo(context, uri) }
+            onProgress(0.05f)
+            val estimateProgress = { f: Float -> onProgress(0.05f + f * 0.45f) }
+            val poses = withContext(Dispatchers.IO) { estimator.processVideo(context, uri, onProgress = estimateProgress) }
             onProgress(0.5f)
             val result = if (poses.isNotEmpty()) {
                 val timestamps = poses.indices.map { it * 0.2f }
@@ -173,7 +174,7 @@ private fun processVideo(
             repository.saveSession(result)
             onProgress(1f)
             onComplete(uri.toString())
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             repository.saveSession(ScoringResult(videoPath = uri.toString(), tes = 0.0, totalScore = 0.0))
             onComplete(uri.toString())
         } finally {
