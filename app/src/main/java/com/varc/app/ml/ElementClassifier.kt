@@ -22,7 +22,7 @@ object ElementClassifier {
     ): ClassificationResult {
         val duration = if (frameTimestamps.isNotEmpty()) frameTimestamps.last() else 0f
         if (poseSequence.size < 5) {
-            return ClassificationResult(emptyList(), false, duration)
+            return ClassificationResult(emptyList(), false, programDuration = duration)
         }
 
         val landmarks = (0..32).associateWith { type ->
