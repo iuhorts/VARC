@@ -162,11 +162,11 @@ private fun processVideo(
             onProgress(0.05f)
             FileLog.writeLine("[CameraScreen] Step 1: estimating poses")
             val estimateProgress = { f: Float -> onProgress(0.05f + f * 0.45f) }
-            val poses = withContext(Dispatchers.IO) { estimator.processVideo(uri, onProgress = estimateProgress) }
+            val poses = withContext(Dispatchers.IO) { estimator.processVideo(uri, maxFrames = 100, onProgress = estimateProgress) }
             onProgress(0.5f)
             FileLog.writeLine("[CameraScreen] Step 2: ${poses.size} poses, classifying")
             val result = if (poses.isNotEmpty()) {
-                val timestamps = poses.indices.map { it * 0.2f }
+                val timestamps = poses.map { it.timestampMs / 1000f }
                 val classification = ElementClassifier.classifyFromPoseData(poses, timestamps)
                 FileLog.writeLine("[CameraScreen] Step 3: classification done, ${classification.elements.size} elements")
                 onProgress(0.7f)

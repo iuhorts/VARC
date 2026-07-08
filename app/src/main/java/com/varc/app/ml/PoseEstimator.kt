@@ -26,7 +26,8 @@ import kotlin.coroutines.resume
 
 data class PoseData(
     val landmarks: List<PoseLandmark>,
-    val boundingBox: Rect? = null
+    val boundingBox: Rect? = null,
+    val timestampMs: Long = 0L
 )
 
 data class PoseLandmark(
@@ -212,7 +213,9 @@ class PoseEstimator(private val context: Context) {
                 }
                 if (bitmap != null) {
                     log("Frame $frameCount: ${bitmap.width}x${bitmap.height}, size=${bitmap.byteCount}")
-                    estimatePose(bitmap, videoRotation)?.let { poses.add(it) }
+                    estimatePose(bitmap, videoRotation)?.let { pose ->
+                        poses.add(pose.copy(timestampMs = timeMs))
+                    }
                     bitmap.recycle()
                     frameCount++
                     if (frameCount % 5 == 0) {
