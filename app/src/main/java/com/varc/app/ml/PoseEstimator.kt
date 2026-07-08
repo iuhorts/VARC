@@ -7,14 +7,12 @@ import android.graphics.Rect
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
-
 import android.provider.MediaStore
 import android.util.Log
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.pose.Pose
 import com.google.mlkit.vision.pose.PoseDetection
 import com.google.mlkit.vision.pose.PoseDetector
-import com.google.mlkit.vision.pose.defaults.PoseDetectorOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -103,15 +101,11 @@ object FileLog {
 
 class PoseEstimator(private val context: Context) {
 
-    private val detector: PoseDetector = PoseDetection.getClient(
-        PoseDetectorOptions.Builder()
-            .setDetectorMode(PoseDetectorOptions.SINGLE_IMAGE_MODE)
-            .build()
-    )
+    private val detector: PoseDetector = PoseDetection.getClient()
 
     companion object {
         private const val TAG = "VARC-Pose"
-        private const val MAX_IMAGE_DIM = 480
+        private const val MAX_IMAGE_DIM = 240
     }
 
     private fun log(msg: String) {
@@ -185,7 +179,7 @@ class PoseEstimator(private val context: Context) {
 
     suspend fun processVideo(
         videoUri: Uri,
-        maxFrames: Int = 30,
+        fps: Int = 5,
         onProgress: ((Float) -> Unit)? = null
     ): List<PoseData> = withContext(Dispatchers.IO) {
         val poses = mutableListOf<PoseData>()
@@ -194,16 +188,17 @@ class PoseEstimator(private val context: Context) {
             retriever.setDataSource(context, videoUri)
             val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
             val videoRotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
-            log("Video duration: ${durationMs}ms, rotation=$videoRotation, maxFrames=$maxFrames")
+            val totalFrames = (durationMs * fps / 1000).toInt()
+            log("Video duration: ${durationMs}ms, rotation=$videoRotation, fps=$fps, totalFrames=$totalFrames")
             if (durationMs <= 0) {
                 logError("Could not read video duration")
                 return@withContext poses
             }
-            val intervalMs = (durationMs / maxFrames).coerceAtLeast(100L)
+            val intervalMs = (1000 / fps).toLong().coerceAtLeast(50L)
             log("Frame interval: ${intervalMs}ms")
             var timeMs = 0L
             var frameCount = 0
-            while (timeMs < durationMs && frameCount < maxFrames) {
+            while (timeMs < durationMs && frameCount < totalFrames) {
                 log("Getting frame at ${timeMs}ms")
                 val bitmap = try {
                     retriever.getFrameAtTime(timeMs * 1000, MediaMetadataRetriever.OPTION_CLOSEST)
@@ -218,13 +213,14 @@ class PoseEstimator(private val context: Context) {
                     }
                     bitmap.recycle()
                     frameCount++
-                    if (frameCount % 5 == 0) {
+                    if (frameCount % 20 == 0) {
                         log("GC hint at frame $frameCount")
                         System.gc()
                     }
-                    onProgress?.invoke(frameCount.toFloat() / maxFrames)
+                    onProgress?.invoke(frameCount.toFloat() / totalFrames)
                 } else {
                     logWarn("No bitmap at ${timeMs}ms")
+                    frameCount++
                 }
                 timeMs += intervalMs
             }

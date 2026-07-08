@@ -162,7 +162,7 @@ private fun processVideo(
             onProgress(0.05f)
             FileLog.writeLine("[CameraScreen] Step 1: estimating poses")
             val estimateProgress = { f: Float -> onProgress(0.05f + f * 0.45f) }
-            val poses = withContext(Dispatchers.IO) { estimator.processVideo(uri, maxFrames = 100, onProgress = estimateProgress) }
+            val poses = withContext(Dispatchers.IO) { estimator.processVideo(uri, fps = 5, onProgress = estimateProgress) }
             onProgress(0.5f)
             FileLog.writeLine("[CameraScreen] Step 2: ${poses.size} poses, classifying")
             val result = if (poses.isNotEmpty()) {
