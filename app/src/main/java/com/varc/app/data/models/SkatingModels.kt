@@ -5,9 +5,10 @@ import org.json.JSONObject
 data class SkaterProfile(
     val id: String = java.util.UUID.randomUUID().toString(),
     val name: String = "Patinadora",
-    val category: String = "Senior Femenino",
+    val category: String = "Alevín Femenino",
     val club: String = "",
-    val level: String = "Nacional"
+    val level: String = "Nacional",
+    val style: String = "Libre"
 )
 
 data class DetectedElement(
@@ -37,11 +38,10 @@ data class ScoringResult(
 )
 
 data class ProgramComponents(
-    val skills: Float = 0f,
+    val skatingSkills: Float = 0f,
     val transitions: Float = 0f,
     val performance: Float = 0f,
-    val choreography: Float = 0f,
-    val interpretation: Float = 0f
+    val choreography: Float = 0f
 )
 
 fun DetectedElement.toJson(): JSONObject {
@@ -68,11 +68,10 @@ fun ScoringResult.toJson(): JSONObject {
         put("deductions", deductions)
         put("totalScore", totalScore)
         put("programDuration", programDuration.toDouble())
-        put("skills", programComponents.skills.toDouble())
+        put("skatingSkills", programComponents.skatingSkills.toDouble())
         put("transitions", programComponents.transitions.toDouble())
-        put("performanceComp", programComponents.performance.toDouble())
+        put("performance", programComponents.performance.toDouble())
         put("choreography", programComponents.choreography.toDouble())
-        put("interpretation", programComponents.interpretation.toDouble())
         val elementsArray = org.json.JSONArray()
         elements.forEach { elementsArray.put(it.toJson()) }
         put("elements", elementsArray)

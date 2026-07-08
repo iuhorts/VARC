@@ -7,72 +7,65 @@ import com.varc.app.ml.ElementClassifier
 
 object ScoringEngine {
 
-    private val pcsFactors = mapOf(
-        "benjamin" to 0.8, "alevin" to 1.0, "infantil" to 1.2,
-        "cadete" to 1.4, "juvenil" to 1.6, "senior" to 2.0,
-        "master" to 1.6
+    data class PCSConfig(
+        val factor: Double,
+        val componentCount: Int,
+        val useInterpretation: Boolean
+    )
+
+    private val pcsConfigs = mapOf(
+        "benjamin" to PCSConfig(0.8, 4, false),
+        "alevin" to PCSConfig(0.8, 4, false),
+        "infantil" to PCSConfig(1.0, 4, false),
+        "cadete" to PCSConfig(1.2, 5, true),
+        "juvenil" to PCSConfig(1.4, 5, true),
+        "senior" to PCSConfig(1.6, 5, true),
+        "master" to PCSConfig(1.6, 5, true)
     )
 
     fun calculateScore(
         classification: ElementClassifier.ClassificationResult,
-        programCategory: String = "senior"
+        programCategory: String = "alevin"
     ): ScoringResult {
         val evaluatedElements = classification.elements.map { element ->
             val sovEntry = SOVTable.getEntry(element.code())
             val baseValue = sovEntry?.baseValue ?: element.baseValue
             val goe = element.goe
             val finalValue = GOECalculator.calculateFinalValue(baseValue, goe)
-
             element.copy(
                 baseValue = baseValue,
                 finalValue = finalValue
             )
         }
 
-        val totalBaseValue = evaluatedElements.sumOf { it.finalValue }
-        val fallDeduction = if (classification.fallDetected) 1.0 else 0.0
-        val deductions = fallDeduction
-        val tes = kotlin.math.round((totalBaseValue - deductions) * 100.0) / 100.0
+        val tes = kotlin.math.round(evaluatedElements.sumOf { it.finalValue } * 100.0) / 100.0
 
-        val factor = pcsFactors.entries.find { programCategory.startsWith(it.key) }?.value ?: 1.5
-        val numElements = maxOf(evaluatedElements.size, 1)
-        val basePcs = (numElements * 1.5 * factor).coerceAtMost(50.0)
-        val programComponents = ProgramComponents(
-            skills = ((numElements * 0.4 * factor).coerceAtMost(10.0)).toFloat(),
-            transitions = ((numElements * 0.3 * factor).coerceAtMost(10.0)).toFloat(),
-            performance = ((numElements * 0.3 * factor).coerceAtMost(10.0)).toFloat(),
-            choreography = ((numElements * 0.3 * factor).coerceAtMost(10.0)).toFloat(),
-            interpretation = ((numElements * 0.3 * factor).coerceAtMost(10.0)).toFloat()
-        )
-        val pcs = basePcs
-        val totalScore = kotlin.math.round((tes + pcs) * 100.0) / 100.0
+        val config = pcsConfigs.entries.find { programCategory.startsWith(it.key) }?.value
+            ?: PCSConfig(1.0, 4, false)
+
+        val deductions = classification.deductions
+
+        val totalScore = kotlin.math.round((tes + classification.pcs - deductions) * 100.0) / 100.0
 
         return ScoringResult(
             elements = evaluatedElements,
             tes = tes,
-            pcs = pcs,
+            pcs = classification.pcs,
             deductions = deductions,
             totalScore = totalScore,
             programDuration = classification.programDuration,
-            programComponents = programComponents
+            programComponents = classification.programComponents
         )
     }
 }
 
-private fun DetectedElement.code(): String {
+fun DetectedElement.code(): String {
     return when {
         name.contains("Axel") && name.contains("Doble") -> "2A"
         name.contains("Axel") && name.contains("Triple") -> "3A"
         name.contains("Axel") -> "1A"
-        name.contains("Pirueta Combinada Cambio") -> "CCoSp"
-        name.contains("Pirueta Combinada") -> "CoSp"
-        name.contains("Pirueta Recta") -> "USp"
-        name.contains("Pirueta Sentada") -> "SSp"
-        name.contains("Pirueta de Ángel") -> "CSp"
-        name.contains("Pirueta del Revés") -> "LSp"
-        name.contains("Secuencia de Pasos Recta") -> "StSq"
-        name.contains("Secuencia de Pasos Circular") -> "CiSt"
-        name.contains("Secuencia Coreográfica") -> "ChSq"
+        name.contains("Waltz") -> "1W"
+        name.contains("Thoren") -> "1Th"
         name.contains("Salchow") && name.contains("Triple") -> "3S"
         name.contains("Salchow") && name.contains("Doble") -> "2S"
         name.contains("Salchow") -> "1S"
@@ -88,7 +81,17 @@ private fun DetectedElement.code(): String {
         name.contains("Lutz") && name.contains("Triple") -> "3Lz"
         name.contains("Lutz") && name.contains("Doble") -> "2Lz"
         name.contains("Lutz") -> "1Lz"
-        name.contains("Euler") -> "1Eu"
+        name.contains("Upright") -> "U"
+        name.contains("Sit") -> "S"
+        name.contains("Camel Backward") -> "CBD"
+        name.contains("Camel Forward") -> "CFD"
+        name.contains("Camel") -> "C"
+        name.contains("Layback") -> "L"
+        name.contains("Footwork") || name.contains("StB") -> "StB"
+        name.contains("Circular") -> "CiSt"
+        name.contains("Serpentina") -> "SlSt"
+        name.contains("Coreográfica") || name.contains("ChSq") -> "ChSq"
+        name.contains("No Level") -> name.take(6).uppercase()
         else -> name.take(4).uppercase()
     }
 }

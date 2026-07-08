@@ -165,11 +165,10 @@ private fun PcsCard(components: ProgramComponents, pcsTotal: Double) {
                     color = MaterialTheme.colorScheme.primary)
             }
             Spacer(modifier = Modifier.height(12.dp))
-            PcsRow("Skills", components.skills)
+            PcsRow("Skating Skills", components.skatingSkills)
             PcsRow("Transitions", components.transitions)
             PcsRow("Performance", components.performance)
             PcsRow("Choreography", components.choreography)
-            PcsRow("Interpretation", components.interpretation)
         }
     }
 }

@@ -151,11 +151,10 @@ private fun PerformancePanel(sessions: List<com.varc.app.data.models.ScoringResu
         val count = sessions.size.coerceAtMost(10)
         val recent = sessions.take(count)
         ProgramComponents(
-            skills = averageAndClamp(recent.map { it.tes }, 10.0),
-            transitions = averageAndClamp(recent.map { it.tes }, 12.0),
-            performance = averageAndClamp(recent.map { it.totalScore - it.tes }, 5.0),
-            choreography = averageAndClamp(recent.map { it.totalScore }, 15.0),
-            interpretation = averageAndClamp(recent.map { it.totalScore - it.deductions }, 12.0)
+            skatingSkills = averageAndClamp(recent.map { it.tes }, 10.0),
+            transitions = averageAndClamp(recent.map { it.tes - it.deductions }, 12.0),
+            performance = averageAndClamp(recent.map { it.pcs }, 5.0),
+            choreography = averageAndClamp(recent.map { it.totalScore }, 15.0)
         )
     } else ProgramComponents()
 
@@ -240,11 +239,10 @@ private fun RadarChart(
     components: ProgramComponents,
     modifier: Modifier = Modifier
 ) {
-    val labels = listOf("Skills", "Transitions", "Performance", "Choreography", "Interpretation")
+    val labels = listOf("Skating Skills", "Transitions", "Performance", "Choreography")
     val values = listOf(
-        components.skills, components.transitions,
-        components.performance, components.choreography,
-        components.interpretation
+        components.skatingSkills, components.transitions,
+        components.performance, components.choreography
     )
     val maxVal = 10f
 
@@ -402,6 +400,7 @@ private fun SkaterInfoPanel(
                     ProfileInfoRow("Categoría", profile.category)
                     ProfileInfoRow("Club", profile.club.ifEmpty { "—" })
                     ProfileInfoRow("Nivel", profile.level)
+                    ProfileInfoRow("Estilo", profile.style)
                     ProfileInfoRow("Reglamento", "World Skate 2025-2026")
                 }
             }
@@ -445,8 +444,10 @@ private fun EditProfileDialog(
     var category by remember { mutableStateOf(current.category) }
     var club by remember { mutableStateOf(current.club) }
     var level by remember { mutableStateOf(current.level) }
+    var style by remember { mutableStateOf(current.style) }
     var categoryExpanded by remember { mutableStateOf(false) }
     var levelExpanded by remember { mutableStateOf(false) }
+    var styleExpanded by remember { mutableStateOf(false) }
     val categories = listOf(
         "Benjamín Femenino", "Benjamín Masculino",
         "Alevín Femenino", "Alevín Masculino",
@@ -457,6 +458,7 @@ private fun EditProfileDialog(
         "Máster Femenino", "Máster Masculino"
     )
     val levels = listOf("Iniciación", "Nacional", "Internacional")
+    val styles = listOf("Libre", "Parejas", "Danza")
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -519,6 +521,31 @@ private fun EditProfileDialog(
                     }
                 }
 
+                ExposedDropdownMenuBox(
+                    expanded = styleExpanded,
+                    onExpandedChange = { styleExpanded = !styleExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = style,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Estilo") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = styleExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = styleExpanded,
+                        onDismissRequest = { styleExpanded = false }
+                    ) {
+                        styles.forEach { s ->
+                            DropdownMenuItem(
+                                text = { Text(s) },
+                                onClick = { style = s; styleExpanded = false }
+                            )
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = club, onValueChange = { club = it },
                     label = { Text("Club") }, singleLine = true,
@@ -528,7 +555,7 @@ private fun EditProfileDialog(
         },
         confirmButton = {
             Button(onClick = {
-                onSave(SkaterProfile(name = name, category = category, club = club, level = level))
+                onSave(SkaterProfile(name = name, category = category, club = club, level = level, style = style))
             }) { Text("Guardar") }
         },
         dismissButton = {

@@ -1,6 +1,7 @@
 package com.varc.app.ml
 
 import com.varc.app.data.models.DetectedElement
+import com.varc.app.data.models.ProgramComponents
 import kotlin.math.*
 
 object ElementClassifier {
@@ -8,7 +9,10 @@ object ElementClassifier {
     data class ClassificationResult(
         val elements: List<DetectedElement>,
         val fallDetected: Boolean = false,
-        val programDuration: Float = 0f
+        val programDuration: Float = 0f,
+        val pcs: Double = 0.0,
+        val deductions: Double = 0.0,
+        val programComponents: ProgramComponents = ProgramComponents()
     )
 
     fun classifyFromPoseData(
@@ -37,16 +41,51 @@ object ElementClassifier {
             val start = frameTimestamps.getOrElse(midIdx - 15) { 0f }.coerceAtLeast(0f)
             val end = frameTimestamps.getOrElse(midIdx + 15) { duration }.coerceAtMost(duration)
             allElements.add(DetectedElement(
-                type = "STEP", name = "Secuencia Coreográfica (ChSq)", level = "1",
-                baseValue = 2.00, goe = 1,
-                goeFactors = listOf("Movimiento continuo"),
-                finalValue = 2.20,
+                type = "STEP", name = "Footwork Sequence (StB)", level = "1",
+                baseValue = 1.80, goe = 0,
+                goeFactors = listOf("Default sequence"),
+                finalValue = 1.80,
                 timestampStart = start, timestampEnd = end,
                 confidence = 0.5f
             ))
         }
 
-        return ClassificationResult(allElements, fallDetected, duration)
+        val deductions = if (fallDetected) 1.0 else 0.0
+        val pcsComponents = estimatePCS(allElements, duration)
+        val pcsTotal = kotlin.math.round(
+            (pcsComponents.skatingSkills + pcsComponents.transitions +
+             pcsComponents.performance + pcsComponents.choreography).toDouble() * 100.0
+        ) / 100.0
+
+        return ClassificationResult(
+            elements = allElements,
+            fallDetected = fallDetected,
+            programDuration = duration,
+            pcs = pcsTotal,
+            deductions = deductions,
+            programComponents = pcsComponents
+        )
+    }
+
+    private fun estimatePCS(elements: List<DetectedElement>, duration: Float): ProgramComponents {
+        val numElements = elements.size.coerceAtLeast(1)
+        val hasJumps = elements.any { it.type == "JUMP" }
+        val hasSpins = elements.any { it.type == "SPIN" }
+        val hasSteps = elements.any { it.type == "STEP" || it.name.contains("Footwork") }
+        val variety = listOf(hasJumps, hasSpins, hasSteps).count { it }
+
+        val base = ((numElements * 0.3f).coerceIn(1.5f, 4.0f))
+        val ss = (base + variety * 0.3f).coerceAtMost(5.0f)
+        val tr = (base * 0.85f + variety * 0.2f).coerceAtMost(4.5f)
+        val pe = (base * 0.9f + (if (elements.any { it.confidence > 0.7f }) 0.5f else 0f)).coerceAtMost(4.5f)
+        val ch = (base * 0.8f + variety * 0.25f).coerceAtMost(4.5f)
+
+        return ProgramComponents(
+            skatingSkills = (kotlin.math.round(ss * 100) / 100f),
+            transitions = (kotlin.math.round(tr * 100) / 100f),
+            performance = (kotlin.math.round(pe * 100) / 100f),
+            choreography = (kotlin.math.round(ch * 100) / 100f)
+        )
     }
 
     private fun estimateBodyHeight(landmarks: Map<Int, List<PoseLandmark>>): Float {
@@ -199,12 +238,14 @@ object ElementClassifier {
     private data class JumpSpec(val code: String, val name: String, val baseValue: Double, val level: String)
 
     private fun jumpClass(rot: Int, axel: Boolean): JumpSpec = when {
-        rot >= 3 && axel -> JumpSpec("3A", "Axel Triple (3A)", 8.00, "3")
-        rot >= 3 -> JumpSpec("3S", "Salchow Triple (3S)", 4.30, "3")
-        rot == 2 && axel -> JumpSpec("2A", "Axel Doble (2A)", 3.30, "2")
-        rot == 2 -> JumpSpec("2S", "Salchow Doble (2S)", 1.30, "2")
-        rot == 1 && axel -> JumpSpec("1A", "Axel Sencillo (1A)", 1.10, "1")
-        else -> JumpSpec("1T", "Toe Loop Sencillo (1T)", 0.40, "1")
+        rot >= 3 && axel -> JumpSpec("3A", "Axel Triple (3A)", 5.50, "3")
+        rot >= 3 -> JumpSpec("3S", "Salchow Triple (3S)", 3.20, "3")
+        rot == 2 && axel -> JumpSpec("2A", "Axel Doble (2A)", 2.50, "2")
+        rot == 2 -> JumpSpec("2S", "Salchow Doble (2S)", 1.70, "2")
+        rot == 1 && axel -> JumpSpec("1A", "Axel Sencillo (1A)", 1.30, "1")
+        rot == 1 -> JumpSpec("1Lo", "Loop Sencillo (1Lo)", 0.90, "1")
+        rot < 1 -> JumpSpec("1Th", "Thoren (1Th)", 0.90, "1")
+        else -> JumpSpec("1T", "Toe Loop Sencillo (1T)", 0.60, "1")
     }
 
     // ── Spin Detection ──────────────────────────────────────

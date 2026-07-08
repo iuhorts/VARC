@@ -59,11 +59,10 @@ class SessionRepository(private val context: Context) {
                     totalScore = obj.optDouble("totalScore", 0.0),
                     programDuration = obj.optDouble("programDuration", 0.0).toFloat(),
                     programComponents = ProgramComponents(
-                        skills = obj.optDouble("skills", 0.0).toFloat(),
+                        skatingSkills = obj.optDouble("skatingSkills", 0.0).toFloat(),
                         transitions = obj.optDouble("transitions", 0.0).toFloat(),
-                        performance = obj.optDouble("performanceComp", 0.0).toFloat(),
-                        choreography = obj.optDouble("choreography", 0.0).toFloat(),
-                        interpretation = obj.optDouble("interpretation", 0.0).toFloat()
+                        performance = obj.optDouble("performance", 0.0).toFloat(),
+                        choreography = obj.optDouble("choreography", 0.0).toFloat()
                     )
                 )
             }.sortedByDescending { it.timestamp }
