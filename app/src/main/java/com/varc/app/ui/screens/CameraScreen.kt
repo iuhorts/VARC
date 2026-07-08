@@ -8,10 +8,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.AudioSpec
 import androidx.camera.video.Recorder
 import androidx.camera.video.Recording
 import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
+import androidx.compose.runtime.CoroutineScope
+import kotlinx.coroutines.suspendCancellableCoroutine
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -89,20 +92,19 @@ fun CameraScreen(
 
     fun startRecording(file: File) {
         currentRecording = recorder.prepareRecording(context, file)
-            .withAudioEnabled()
+            .withAudioEnabled(AudioSpec.DEFAULT)
             .start(ContextCompat.getMainExecutor(context)) { event ->
                 when (event) {
+                    is VideoRecordEvent.Start -> {}
                     is VideoRecordEvent.Finalize -> {
-                        val uri = event.outputResults.outputUri
-                        videoUri = uri
-                        processVideo(context, uri, repository, onAnalysisComplete, { progressValue = it }, scope) {
-                            isProcessing = it
+                        if (event.error == VideoRecordEvent.Finalize.ERROR_NONE) {
+                            val uri = event.outputResults.outputUri
+                            videoUri = uri
+                            processVideo(context, uri, repository, onAnalysisComplete, { progressValue = it }, scope) {
+                                isProcessing = it
+                            }
                         }
                     }
-                    is VideoRecordEvent.Error -> {
-                        // recording error
-                    }
-                    else -> {}
                 }
             }
     }
@@ -255,10 +257,10 @@ fun CameraScreen(
     }
 }
 
-private suspend fun awaitCameraProvider(context: Context): ProcessCameraProvider = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+private suspend fun awaitCameraProvider(context: Context): ProcessCameraProvider = suspendCancellableCoroutine { cont ->
     val future = ProcessCameraProvider.getInstance(context)
     future.addListener({
-        if (!cont.isCancelled) {
+        if (cont.isActive) {
             try { cont.resume(future.get()) } catch (e: Exception) { cont.resumeWithException(e) }
         }
     }, ContextCompat.getMainExecutor(context))
@@ -270,7 +272,7 @@ private fun processVideo(
     repository: SessionRepository,
     onComplete: (String) -> Unit,
     onProgress: (Float) -> Unit,
-    scope: androidx.compose.runtime.CoroutineScope,
+    scope: CoroutineScope,
     setProcessing: (Boolean) -> Unit
 ) {
     setProcessing(true)
