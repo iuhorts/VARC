@@ -110,7 +110,7 @@ class PoseEstimator(private val context: Context) {
 
     companion object {
         private const val TAG = "VARC-Pose"
-        private const val MAX_IMAGE_DIM = 360
+        private const val MAX_IMAGE_DIM = 480
     }
 
     private fun log(msg: String) {
@@ -142,11 +142,12 @@ class PoseEstimator(private val context: Context) {
         return Bitmap.createScaledBitmap(bitmap, newW, newH, true)
     }
 
-    suspend fun estimatePose(bitmap: Bitmap): PoseData? = withContext(Dispatchers.Default) {
+    suspend fun estimatePose(bitmap: Bitmap, rotation: Int = 0): PoseData? = withContext(Dispatchers.Default) {
         var scaled: Bitmap? = null
         try {
             scaled = scaleBitmap(bitmap)
-            val inputImage = InputImage.fromBitmap(scaled, 0)
+            log("rotation=$rotation")
+            val inputImage = InputImage.fromBitmap(scaled, rotation)
             val pose = suspendCancellableCoroutine<Pose?> { cont ->
                 detector.process(inputImage)
                     .addOnSuccessListener { result ->
@@ -191,7 +192,8 @@ class PoseEstimator(private val context: Context) {
         try {
             retriever.setDataSource(context, videoUri)
             val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            log("Video duration: ${durationMs}ms, maxFrames=$maxFrames")
+            val videoRotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            log("Video duration: ${durationMs}ms, rotation=$videoRotation, maxFrames=$maxFrames")
             if (durationMs <= 0) {
                 logError("Could not read video duration")
                 return@withContext poses
@@ -210,7 +212,7 @@ class PoseEstimator(private val context: Context) {
                 }
                 if (bitmap != null) {
                     log("Frame $frameCount: ${bitmap.width}x${bitmap.height}, size=${bitmap.byteCount}")
-                    estimatePose(bitmap)?.let { poses.add(it) }
+                    estimatePose(bitmap, videoRotation)?.let { poses.add(it) }
                     bitmap.recycle()
                     frameCount++
                     if (frameCount % 5 == 0) {

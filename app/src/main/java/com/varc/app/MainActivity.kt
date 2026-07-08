@@ -1,5 +1,6 @@
 package com.varc.app
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -31,7 +32,8 @@ class MainActivity : ComponentActivity() {
                                 hasPermission = true,
                                 onRequestPermission = {},
                                 onAnalysisComplete = { videoPath ->
-                                    navController.navigate("results/$videoPath")
+                                    val encoded = Uri.encode(videoPath)
+                                    navController.navigate("results/$encoded")
                                 },
                                 onNavigateToProfile = {
                                     navController.navigate("profile")
@@ -39,7 +41,8 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable("results/{videoPath}") { backStackEntry ->
-                            val videoPath = backStackEntry.arguments?.getString("videoPath") ?: ""
+                            val rawPath = backStackEntry.arguments?.getString("videoPath") ?: ""
+                            val videoPath = Uri.decode(rawPath)
                             ResultsScreen(
                                 videoPath = videoPath,
                                 onBack = { navController.popBackStack() }
