@@ -9,60 +9,106 @@ object ScoringEngine {
 
     data class PCSConfig(
         val factor: Double,
-        val componentCount: Int,
-        val useInterpretation: Boolean
+        val componentCount: Int
     )
 
     private val pcsConfigs = mapOf(
-        "benjamin" to PCSConfig(0.8, 4, false),
-        "alevin" to PCSConfig(0.8, 4, false),
-        "infantil" to PCSConfig(1.0, 4, false),
-        "cadete" to PCSConfig(1.2, 5, true),
-        "juvenil" to PCSConfig(1.4, 5, true),
-        "senior" to PCSConfig(1.6, 5, true),
-        "master" to PCSConfig(1.6, 5, true)
+        "benjamin" to PCSConfig(0.8, 4),
+        "alevin" to PCSConfig(0.8, 4),
+        "infantil" to PCSConfig(1.0, 4),
+        "cadete" to PCSConfig(1.2, 4),
+        "juvenil" to PCSConfig(1.4, 4),
+        "senior" to PCSConfig(1.6, 4),
+        "master" to PCSConfig(1.6, 4)
     )
 
     fun calculateScore(
         classification: ElementClassifier.ClassificationResult,
         programCategory: String = "alevin"
     ): ScoringResult {
-        val evaluatedElements = classification.elements.map { element ->
-            val sovEntry = SOVTable.getEntry(element.code())
+        val categoryKey = mapCategory(programCategory)
+
+        val evaluatedElements = classification.elements.mapIndexed { _, element ->
+            val code = element.code()
+            val sovEntry = SOVTable.getEntry(code)
             val baseValue = sovEntry?.baseValue ?: element.baseValue
-            val goe = element.goe
-            val finalValue = GOECalculator.calculateFinalValue(baseValue, goe)
+
+            val secondHalfBonus = SOVTable.baseValueWithSecondHalf(code, element.isSecondHalf, categoryKey)
+            val adjustedBase = if (element.isSecondHalf && categoryKey in listOf("cadete", "juvenil", "senior"))
+                secondHalfBonus else baseValue
+
+            val isTripleOrQuad = code.startsWith("3") || code.startsWith("4")
+            val rotationAdjusted = when (element.rotationQuality) {
+                "<" -> GOECalculator.jumpValueUnder(adjustedBase, isTripleOrQuad)
+                "<<" -> GOECalculator.jumpValueHalf(adjustedBase, isTripleOrQuad)
+                "<<<" -> GOECalculator.jumpValueDowngraded(code)
+                else -> adjustedBase
+            }
+
+            val goeFinal = element.goe
+            val withGOE = GOECalculator.calculateFinalValue(rotationAdjusted, goeFinal)
+
+            val finalValue = kotlin.math.round(withGOE * 100.0) / 100.0
+
             element.copy(
-                baseValue = baseValue,
+                baseValue = adjustedBase,
                 finalValue = finalValue
             )
         }
 
         val tes = kotlin.math.round(evaluatedElements.sumOf { it.finalValue } * 100.0) / 100.0
 
-        val config = pcsConfigs.entries.find { programCategory.startsWith(it.key) }?.value
-            ?: PCSConfig(1.0, 4, false)
+        val config = pcsConfigs.entries.find { categoryKey.startsWith(it.key) }?.value
+            ?: PCSConfig(1.0, 4)
 
-        val deductions = classification.deductions
+        val fallDeduction = (1..classification.fallCount).sumOf {
+            CategoryValidator.fallPenalty(it, programCategory)
+        }
+        val deductions = classification.deductions + fallDeduction
 
-        val totalScore = kotlin.math.round((tes + classification.pcs - deductions) * 100.0) / 100.0
+        val pcsSum = classification.programComponents.run {
+            skatingSkills + transitions + performance + choreography
+        }
+        val weightedPcs = kotlin.math.round(pcsSum.toDouble() * config.factor * 100.0) / 100.0
+
+        val totalScore = kotlin.math.round((tes + weightedPcs - deductions) * 100.0) / 100.0
 
         return ScoringResult(
             elements = evaluatedElements,
             tes = tes,
-            pcs = classification.pcs,
+            pcs = weightedPcs,
             deductions = deductions,
             totalScore = totalScore,
             programDuration = classification.programDuration,
-            programComponents = classification.programComponents
+            programComponents = classification.programComponents,
+            fallCount = classification.fallCount
         )
+    }
+
+    private fun mapCategory(raw: String): String {
+        val lower = raw.lowercase().trim()
+        return when {
+            lower.contains("benjam") || lower.contains("alev") || lower.contains("prealev") -> "benjamin"
+            lower.contains("infant") -> "infantil"
+            lower.contains("cadet") -> "cadete"
+            lower.contains("juven") -> "juvenil"
+            lower.contains("senior") || lower.contains("master") -> "senior"
+            else -> "alevin"
+        }
+    }
+
+    fun validateElements(
+        elements: List<DetectedElement>,
+        category: String
+    ): List<CategoryValidator.Violation> {
+        return CategoryValidator.validate(elements, category)
     }
 }
 
 fun DetectedElement.code(): String {
     return when {
-        name.contains("Axel") && name.contains("Doble") -> "2A"
         name.contains("Axel") && name.contains("Triple") -> "3A"
+        name.contains("Axel") && name.contains("Doble") -> "2A"
         name.contains("Axel") -> "1A"
         name.contains("Waltz") -> "1W"
         name.contains("Thoren") -> "1Th"
@@ -87,11 +133,18 @@ fun DetectedElement.code(): String {
         name.contains("Camel Forward") -> "CFD"
         name.contains("Camel") -> "C"
         name.contains("Layback") -> "L"
+        name.contains("Broken") -> "Br"
+        name.contains("Heel") -> "H"
+        name.contains("Inverted") -> "In"
+        name.contains("No Level") -> name.take(6).uppercase()
         name.contains("Footwork") || name.contains("StB") -> "StB"
         name.contains("Circular") -> "CiSt"
         name.contains("Serpentina") -> "SlSt"
         name.contains("Coreográfica") || name.contains("ChSq") -> "ChSq"
-        name.contains("No Level") -> name.take(6).uppercase()
+        name.contains("Recta") || name.contains("USp") -> "U"
+        name.contains("Sentada") || name.contains("SSp") -> "S"
+        name.contains("Ángel") || name.contains("CSp") -> "C"
+        name.contains("Combinada") || name.contains("CoSp") -> "U"
         else -> name.take(4).uppercase()
     }
 }

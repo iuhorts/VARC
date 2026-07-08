@@ -44,11 +44,15 @@ class SessionRepository(private val context: Context) {
                             timestampStart = eo.optDouble("timestampStart", 0.0).toFloat(),
                             timestampEnd = eo.optDouble("timestampEnd", 0.0).toFloat(),
                             isValid = eo.optBoolean("isValid", true),
-                            confidence = eo.optDouble("confidence", 0.0).toFloat()
+                            confidence = eo.optDouble("confidence", 0.0).toFloat(),
+                            rotationQuality = eo.optString("rotationQuality", ""),
+                            isSecondHalf = eo.optBoolean("isSecondHalf", false),
+                            bonusPercent = eo.optInt("bonusPercent", 0)
                         )
                     }
                 } else emptyList()
 
+                val fallCount = obj.optInt("fallCount", 0)
                 ScoringResult(
                     timestamp = obj.getLong("timestamp"),
                     videoPath = obj.optString("videoPath", ""),
@@ -58,6 +62,7 @@ class SessionRepository(private val context: Context) {
                     deductions = obj.optDouble("deductions", 0.0),
                     totalScore = obj.optDouble("totalScore", 0.0),
                     programDuration = obj.optDouble("programDuration", 0.0).toFloat(),
+                    fallCount = fallCount,
                     programComponents = ProgramComponents(
                         skatingSkills = obj.optDouble("skatingSkills", 0.0).toFloat(),
                         transitions = obj.optDouble("transitions", 0.0).toFloat(),

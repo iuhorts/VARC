@@ -9,6 +9,7 @@ object ElementClassifier {
     data class ClassificationResult(
         val elements: List<DetectedElement>,
         val fallDetected: Boolean = false,
+        val fallCount: Int = 0,
         val programDuration: Float = 0f,
         val pcs: Double = 0.0,
         val deductions: Double = 0.0,
@@ -31,8 +32,8 @@ object ElementClassifier {
         }
 
         val bodyHeight = estimateBodyHeight(landmarks)
-        val fallDetected = detectFall(poseSequence, landmarks)
-        val jumps = detectJumps(poseSequence, landmarks, frameTimestamps, bodyHeight)
+        val fallCount = detectFallCount(poseSequence, landmarks)
+        val jumps = detectJumps(poseSequence, landmarks, frameTimestamps, bodyHeight, duration)
         val spins = detectSpins(poseSequence, landmarks, frameTimestamps, bodyHeight)
         val allElements = mergeOverlapping(jumps + spins)
 
@@ -50,7 +51,7 @@ object ElementClassifier {
             ))
         }
 
-        val deductions = if (fallDetected) 1.0 else 0.0
+        val deductions = 0.0
         val pcsComponents = estimatePCS(allElements, duration)
         val pcsTotal = kotlin.math.round(
             (pcsComponents.skatingSkills + pcsComponents.transitions +
@@ -59,7 +60,8 @@ object ElementClassifier {
 
         return ClassificationResult(
             elements = allElements,
-            fallDetected = fallDetected,
+            fallDetected = fallCount > 0,
+            fallCount = fallCount,
             programDuration = duration,
             pcs = pcsTotal,
             deductions = deductions,
@@ -67,7 +69,7 @@ object ElementClassifier {
         )
     }
 
-    private fun estimatePCS(elements: List<DetectedElement>, duration: Float): ProgramComponents {
+    fun estimatePCS(elements: List<DetectedElement>, duration: Float): ProgramComponents {
         val numElements = elements.size.coerceAtLeast(1)
         val hasJumps = elements.any { it.type == "JUMP" }
         val hasSpins = elements.any { it.type == "SPIN" }
@@ -92,6 +94,17 @@ object ElementClassifier {
         val nose = landmarks[0]?.firstOrNull() ?: return 240f
         val ankle = landmarks[27]?.firstOrNull() ?: landmarks[28]?.firstOrNull() ?: return 240f
         return abs(nose.y - ankle.y) * 1.2f
+    }
+
+    private fun rotationQuality(estimated: Int, expected: Int): String {
+        if (expected == 0) return ""
+        val ratio = estimated.toFloat() / expected.toFloat()
+        return when {
+            ratio < 0.3f -> "<<<"
+            ratio < 0.7f -> "<<"
+            ratio < 0.9f -> "<"
+            else -> ""
+        }
     }
 
     private fun mergeOverlapping(elements: List<DetectedElement>): MutableList<DetectedElement> {
@@ -128,22 +141,28 @@ object ElementClassifier {
 
     // ── Fall Detection ──────────────────────────────────────
 
-    private fun detectFall(
+    private fun detectFallCount(
         poseSequence: List<PoseData>,
         landmarks: Map<Int, List<PoseLandmark>>
-    ): Boolean {
-        if (poseSequence.size < 5) return false
-        val checkCount = (poseSequence.size / 3).coerceAtLeast(3)
-        val startIdx = (poseSequence.size - checkCount).coerceAtLeast(0)
-        var fallFrames = 0
-        for (i in startIdx until poseSequence.size) {
+    ): Int {
+        if (poseSequence.size < 10) return 0
+        val windowSize = (poseSequence.size / 6).coerceIn(3, 10)
+        var count = 0
+        var inFall = false
+        for (i in 0 until poseSequence.size - windowSize) {
             val lh = landmarks[23]?.getOrNull(i) ?: continue
             val rh = landmarks[24]?.getOrNull(i) ?: continue
             val nose = landmarks[0]?.getOrNull(i) ?: continue
             val hipY = (lh.y + rh.y) / 2f
-            if (nose.y > hipY + 30f) fallFrames++
+            val isDown = nose.y > hipY + 30f
+            if (isDown && !inFall) {
+                count++
+                inFall = true
+            } else if (!isDown) {
+                inFall = false
+            }
         }
-        return fallFrames >= (checkCount * 0.4f)
+        return count
     }
 
     // ── Jump Detection ──────────────────────────────────────
@@ -152,7 +171,8 @@ object ElementClassifier {
         poseSequence: List<PoseData>,
         landmarks: Map<Int, List<PoseLandmark>>,
         timestamps: List<Float>,
-        bodyHeight: Float
+        bodyHeight: Float,
+        duration: Float
     ): List<DetectedElement> {
         val n = poseSequence.size
         if (n < 8) return emptyList()
@@ -216,11 +236,15 @@ object ElementClassifier {
             val isAxel = rotDeg > 225.0
 
             val (code, jname, baseVal, level) = jumpClass(estimatedRotations, isAxel)
+            val expectedRevs = (code.firstOrNull()?.toString()?.toIntOrNull() ?: 0)
+            val rotQual = rotationQuality(estimatedRotations, expectedRevs)
             val startTime = timestamps.getOrElse(maxOf(0, i - 1)) { 0f }
             val endTime = timestamps.getOrElse(minOf(n - 1, i + 1)) { 0f }
 
+            val secondHalf = duration > 0f && startTime >= duration * 0.5f
+
             elements.add(DetectedElement(
-                type = "JUMP", name = jname, level = level,
+                type = "JUMP", name = jname, level = code,
                 baseValue = baseVal, goe = 1,
                 goeFactors = listOf(
                     "Rot: ~${estimatedRotations} rev",
@@ -228,7 +252,9 @@ object ElementClassifier {
                 ),
                 finalValue = baseVal * 1.1,
                 timestampStart = startTime, timestampEnd = endTime,
-                confidence = (displacement / (bodyHeight * 0.15f)).coerceIn(0f, 1f)
+                confidence = (displacement / (bodyHeight * 0.15f)).coerceIn(0f, 1f),
+                rotationQuality = rotQual,
+                isSecondHalf = secondHalf
             ))
         }
 

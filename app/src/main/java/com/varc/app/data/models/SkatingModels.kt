@@ -22,7 +22,10 @@ data class DetectedElement(
     val timestampStart: Float,
     val timestampEnd: Float,
     val isValid: Boolean = true,
-    val confidence: Float = 0f
+    val confidence: Float = 0f,
+    val rotationQuality: String = "",
+    val isSecondHalf: Boolean = false,
+    val bonusPercent: Int = 0
 )
 
 data class ScoringResult(
@@ -34,7 +37,8 @@ data class ScoringResult(
     val deductions: Double = 0.0,
     val totalScore: Double = 0.0,
     val programDuration: Float = 0f,
-    val programComponents: ProgramComponents = ProgramComponents()
+    val programComponents: ProgramComponents = ProgramComponents(),
+    val fallCount: Int = 0
 )
 
 data class ProgramComponents(
@@ -56,6 +60,9 @@ fun DetectedElement.toJson(): JSONObject {
         put("timestampEnd", timestampEnd.toDouble())
         put("isValid", isValid)
         put("confidence", confidence.toDouble())
+        put("rotationQuality", rotationQuality)
+        put("isSecondHalf", isSecondHalf)
+        put("bonusPercent", bonusPercent)
     }
 }
 
@@ -68,6 +75,7 @@ fun ScoringResult.toJson(): JSONObject {
         put("deductions", deductions)
         put("totalScore", totalScore)
         put("programDuration", programDuration.toDouble())
+        put("fallCount", fallCount)
         put("skatingSkills", programComponents.skatingSkills.toDouble())
         put("transitions", programComponents.transitions.toDouble())
         put("performance", programComponents.performance.toDouble())

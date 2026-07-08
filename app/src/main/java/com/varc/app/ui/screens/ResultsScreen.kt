@@ -132,6 +132,18 @@ private fun ScoreSummaryCard(result: ScoringResult) {
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
             Spacer(modifier = Modifier.height(16.dp))
+            if (result.fallCount > 0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text("${result.fallCount} caída${if (result.fallCount > 1) "s" else ""}",
+                        color = Color(0xFFCF6679),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -293,6 +305,24 @@ private fun ElementCard(
                             style = MaterialTheme.typography.bodySmall,
                             color = goeColor,
                             fontWeight = FontWeight.SemiBold)
+                    }
+                    if (element.type == "JUMP" && element.rotationQuality.isNotEmpty()) {
+                        val qualLabel = when (element.rotationQuality) {
+                            "<" -> "Under-rotado (<)"
+                            "<<" -> "Half-rotado (<<)"
+                            "<<<" -> "Downgraded (<<<)"
+                            else -> element.rotationQuality
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Rotación:", style = MaterialTheme.typography.bodySmall)
+                            Text(qualLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFFCF6679),
+                                fontWeight = FontWeight.SemiBold)
+                        }
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
