@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalVideoApi
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.Recorder
@@ -44,7 +45,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.Executors
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalVideoApi::class)
 @Composable
 fun CameraScreen(
     hasPermission: Boolean,
@@ -259,7 +260,7 @@ private suspend fun awaitCameraProvider(context: Context): ProcessCameraProvider
     val future = ProcessCameraProvider.getInstance(context)
     future.addListener({
         if (cont.isActive) {
-            try { cont.resume(future.get(), onCancellation = null) } catch (e: Exception) { cont.resumeWithException(e) }
+            try { cont.resume(future.get(), onCancellation = null) } catch (e: Exception) { cont.resumeWith(Result.failure(e)) }
         }
     }, ContextCompat.getMainExecutor(context))
 }
