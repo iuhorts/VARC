@@ -188,6 +188,7 @@ class PoseEstimator(private val context: Context) {
         onProgress: ((Float) -> Unit)? = null
     ): List<PoseData> = withContext(Dispatchers.IO) {
         val poses = mutableListOf<PoseData>()
+        val timestamps = mutableListOf<Long>()
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(context, videoUri)
@@ -205,6 +206,7 @@ class PoseEstimator(private val context: Context) {
             var frameCount = 0
             while (timeMs < durationMs && frameCount < totalFrames) {
                 log("Getting frame at ${timeMs}ms")
+                timestamps.add(timeMs)
                 val bitmap = try {
                     retriever.getFrameAtTime(timeMs * 1000, MediaMetadataRetriever.OPTION_CLOSEST)
                 } catch (e: Throwable) {
@@ -213,18 +215,17 @@ class PoseEstimator(private val context: Context) {
                 }
                 if (bitmap != null) {
                     log("Frame $frameCount: ${bitmap.width}x${bitmap.height}, size=${bitmap.byteCount}")
-                    estimatePose(bitmap, videoRotation)?.let { pose ->
-                        poses.add(pose.copy(timestampMs = timeMs))
+                    try {
+                        estimatePose(bitmap, videoRotation)?.let { pose ->
+                            poses.add(pose.copy(timestampMs = timeMs))
+                        }
+                    } finally {
+                        bitmap.recycle()
                     }
-                    bitmap.recycle()
                     frameCount++
-                    if (frameCount % 20 == 0) {
-                        log("GC hint at frame $frameCount")
-                        System.gc()
-                    }
                     onProgress?.invoke(frameCount.toFloat() / totalFrames)
                 } else {
-                    logWarn("No bitmap at ${timeMs}ms")
+                    logWarn("No bitmap at ${timeMs}ms, inserting placeholder")
                     frameCount++
                 }
                 timeMs += intervalMs
